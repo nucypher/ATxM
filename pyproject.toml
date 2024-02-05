@@ -1,0 +1,35 @@
+[project]
+name = "atxm"
+version = "0.0.1"
+authors = [
+  { name="NuCypher", email="devs@nucypher.com" },
+]
+description = "Automatic Tx Machine"
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: AGPL-3.0",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "web3",
+    "twisted"
+]
+
+[project.optional-dependencies] # Optional
+test = [
+    "pytest",
+    "pytest-twisted",
+]
+
+[project.urls]
+Homepage = "https://github.com/nucypher/atxm"
+Issues = "https://github.com/nucypher/atxm/issues"
+
+[build-system]
+# These are the assumed default build requirements from pip:
+# https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
