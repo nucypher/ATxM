@@ -92,6 +92,16 @@ class _Machine(SimpleTask):
         )
         self.log.info(f"[working] cycle interval is {self._task.interval} seconds")
 
+    def _auto_start(self):
+        """Start the machine if it's not already running."""
+        if not self._task.running:
+            self.start(now=True)
+
+    def _auto_stop(self):
+        """Stop the machine if it's running."""
+        if self._task.running:
+            self.stop()
+
     #
     # Lifecycle
     #

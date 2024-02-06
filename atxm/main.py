@@ -39,6 +39,8 @@ class AutomaticTxMachine(_Machine):
         if signer.address not in self.signers:
             self.signers[signer.address] = signer
         tx = self._state.queue(_from=signer.address, params=params, *args, **kwargs)
+        if not self._task.running:
+            self._auto_start()
         return tx
 
     def queue_transactions(
