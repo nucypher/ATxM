@@ -46,19 +46,17 @@ def _get_receipt(w3: Web3, data: Union[TxData, PendingTxData]) -> Optional[TxRec
 
 def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
     """
-    Fire a hook in a separate thread.
-    Try exceptionally hard not to crash the transaction
-    tracker tasks while dispatching hooks.
+    Fire a callable in a separate thread.
+    Try exceptionally hard not to crash the async tasks during dispatch.
     """
-
-    def _hook() -> None:
-        """I'm inside a thread!"""
-        try:
-            hook(tx, *args, **kwargs)
-        except Exception as e:
-            log.warn(f"[hook] {e}")
-
     with contextlib.suppress(Exception):
+        def _hook() -> None:
+            """I'm inside a thread!"""
+            try:
+                hook(tx, *args, **kwargs)
+            except Exception as e:
+                log.warn(f"[hook] {e}")
+
         reactor.callInThread(_hook)
         log.info(f"[hook] fired hook {hook} for transaction #atx-{tx.id}")
 
