@@ -67,7 +67,7 @@ class _Machine(SimpleTask):
         self.strategy = strategy or self._STRATEGY(w3=w3)
 
         # internal
-        self.__state = _State(disk_cache=disk_cache)
+        self._state = _State(disk_cache=disk_cache)
         super().__init__(interval=self.INTERVAL)
 
     #
@@ -114,13 +114,13 @@ class _Machine(SimpleTask):
 
         # Outcome 1: pending transaction has timed out
         if self.__active_timed_out():
-            hook = self.__state.active.on_timeout
+            hook = self._state.active.on_timeout
             self.log.warn(
-                f"[timeout] pending transaction {self.__state.active.txhash.hex()} has timed out"
+                f"[timeout] pending transaction {self._state.active.txhash.hex()} has timed out"
             )
-            self.__state.clear_active()
+            self._state.clear_active()
             if hook:
-                fire_hook(hook=hook, tx=self.__state.active)
+                fire_hook(hook=hook, tx=self._state.active)
             return True
 
         try:
@@ -128,27 +128,27 @@ class _Machine(SimpleTask):
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted:
-            revert_hook = self.__state.active.on_revert
+            revert_hook = self._state.active.on_revert
             if revert_hook:
-                fire_hook(hook=revert_hook, tx=self.__state.active)
+                fire_hook(hook=revert_hook, tx=self._state.active)
             # clear the active transaction slot
-            self.__state.clear_active()
+            self._state.clear_active()
             return True
 
         # Outcome 3: pending transaction is finalized (final success)
         if receipt:
             final_txhash = receipt["transactionHash"]
-            confirmations = self.__get_confirmations(tx=self.__state.active)
+            confirmations = self.__get_confirmations(tx=self._state.active)
             self.log.info(
-                f"[finalized] Transaction #atx-{self.__state.active.id} has been finalized "
+                f"[finalized] Transaction #atx-{self._state.active.id} has been finalized "
                 f"with {confirmations} confirmations txhash: {final_txhash.hex()}"
             )
             # clear the active transaction slot
-            self.__state.finalize_active_tx(receipt=receipt)
+            self._state.finalize_active_tx(receipt=receipt)
             return True
 
         # Outcome 4: pending transaction is halted by strategy
-        if self.__state.active.halt:
+        if self._state.active.halt:
             return False
 
         # Outcome 5: retry the pending transaction with the strategy
@@ -188,7 +188,7 @@ class _Machine(SimpleTask):
         self.log.info(
             f"[{msg}] fired transaction #atx-{tx.id}|{tx.params['nonce']}|{txhash.hex()}"
         )
-        pending_tx = self.__state.morph(tx=tx, txhash=txhash)
+        pending_tx = self._state.morph(tx=tx, txhash=txhash)
         log.info(f"[state] #atx-{pending_tx.id} queued -> pending")
         if tx.on_broadcast:
             fire_hook(hook=tx.on_broadcast, tx=tx)
@@ -198,21 +198,21 @@ class _Machine(SimpleTask):
         """Retry the currently tracked pending transaction with the configured strategy."""
         try:
             params = self.strategy.execute(
-                params=_make_tx_params(self.__state.active.data),
+                params=_make_tx_params(self._state.active.data),
             )
         except Halt as e:
-            self.__state.active.halt = True
+            self._state.active.halt = True
             self.log.warn(
-                f"[cap] pending transaction {self.__state.active.txhash.hex()} has been capped: {e}"
+                f"[cap] pending transaction {self._state.active.txhash.hex()} has been capped: {e}"
             )
             # It would be nice to re-queue the capped transaction however,
             # if the pending tx has already reached the spending cap it cannot
             # be sped up again (without increasing the cap).  For now, we just
             # let the transaction timeout and remove it, but this may cascade
             # into a chain of capped transactions if the cap is not increased / is too low.
-            hook = self.__state.active.on_halt
+            hook = self._state.active.on_halt
             if hook:
-                fire_hook(hook=hook, tx=self.__state.active)
+                fire_hook(hook=hook, tx=self._state.active)
             return
 
         # use the strategy-generated transaction parameters
@@ -227,7 +227,7 @@ class _Machine(SimpleTask):
         Attempts to broadcast the next `FutureTx` in the queue.
         If the broadcast is not successful, it is re-queued.
         """
-        future_tx = self.__state.pop()  # popleft
+        future_tx = self._state.pop()  # popleft
         future_tx.params = _make_tx_params(future_tx.params)
         signer = self.__get_signer(future_tx._from)
         nonce = self.w3.eth.get_transaction_count(signer.address, "latest")
@@ -239,7 +239,7 @@ class _Machine(SimpleTask):
         future_tx.params["nonce"] = nonce
         pending_tx = self.__fire(tx=future_tx, msg="broadcast")
         if not pending_tx:
-            self.__state.requeue(future_tx)
+            self._state.requeue(future_tx)
             return
         return pending_tx.txhash
 
@@ -257,13 +257,13 @@ class _Machine(SimpleTask):
         NOTE: Performs state changes
         """
         try:
-            txdata = self.w3.eth.get_transaction(self.__state.active.txhash)
-            self.__state.active.data = txdata
+            txdata = self.w3.eth.get_transaction(self._state.active.txhash)
+            self._state.active.data = txdata
         except TransactionNotFound:
             self.log.error(
-                f"[error] Transaction {self.__state.active.txhash.hex()} not found"
+                f"[error] Transaction {self._state.active.txhash.hex()} not found"
             )
-            self.__state.clear_active()
+            self._state.clear_active()
             return
 
         receipt = _get_receipt(w3=self.w3, data=txdata)
@@ -303,17 +303,17 @@ class _Machine(SimpleTask):
         Returns True if the active transaction has timed out.
         Does not perform any state changes.
         """
-        if not self.__state.active:
+        if not self._state.active:
             return False
-        timeout = (time.time() - self.__state.active.created) > self.timeout
+        timeout = (time.time() - self._state.active.created) > self.timeout
         if timeout:
             self.log.warn(
-                f"[timeout] Transaction {self.__state.active.txhash.hex()} has been pending for more than"
+                f"[timeout] Transaction {self._state.active.txhash.hex()} has been pending for more than"
                 f"{self.timeout} seconds"
             )
             return True
         time_remaining = round(
-            self.timeout - (time.time() - self.__state.active.created)
+            self.timeout - (time.time() - self._state.active.created)
         )
         minutes = round(time_remaining / 60)
         remainder_seconds = time_remaining % 60
@@ -321,13 +321,13 @@ class _Machine(SimpleTask):
         human_end_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
         if time_remaining < (60 * 2):
             self.log.warn(
-                f"[timeout] Transaction {self.__state.active.txhash.hex()} will timeout in "
+                f"[timeout] Transaction {self._state.active.txhash.hex()} will timeout in "
                 f"{minutes}m{remainder_seconds}s at {human_end_time}"
             )
         else:
             self.log.info(
-                f"[pending] {self.__state.active.txhash.hex()} \n"
-                f"[pending] {round(time.time() - self.__state.active.created)}s Elapsed | "
+                f"[pending] {self._state.active.txhash.hex()} \n"
+                f"[pending] {round(time.time() - self._state.active.created)}s Elapsed | "
                 f"{minutes}m{remainder_seconds}s Remaining | "
                 f"Timeout at {human_end_time}"
             )
@@ -335,14 +335,14 @@ class _Machine(SimpleTask):
 
     def __monitor_finalized(self) -> None:
         """Follow-up on finalized transactions for a little while."""
-        if not self.__state.finalized:
+        if not self._state.finalized:
             return
-        for tx in self.__state.finalized.copy():
+        for tx in self._state.finalized.copy():
             confirmations = self.__get_confirmations(tx=tx)
             txhash = tx.receipt["transactionHash"]
             if confirmations >= self._TRACKING_CONFIRMATIONS:
-                if tx in self.__state.finalized:
-                    self.__state.finalized.remove(tx)
+                if tx in self._state.finalized:
+                    self._state.finalized.remove(tx)
                     self.log.info(
                         f"[clear] stopped tracking {txhash.hex()} after {confirmations} confirmations"
                     )
@@ -360,7 +360,7 @@ class _Machine(SimpleTask):
         self.log.warn(
             "[recovery] error during transaction: {}".format(args[0].getTraceback())
         )
-        self.__state.commit()
+        self._state.commit()
         time.sleep(self._RPC_THROTTLE)
         if not self._task.running:
             self.log.warn("[recovery] restarting transaction tracker!")
@@ -376,12 +376,12 @@ class _Machine(SimpleTask):
 
         self.__work_mode()
         self.log.info(
-            f"[working] tracking {len(self.__state.waiting)} queued "
-            f"transaction{'s' if len(self.__state.waiting) > 1 else ''} "
-            f"{'and 1 pending transaction' if self.__state.active else ''}"
+            f"[working] tracking {len(self._state.waiting)} queued "
+            f"transaction{'s' if len(self._state.waiting) > 1 else ''} "
+            f"{'and 1 pending transaction' if self._state.active else ''}"
         )
 
-        if self.__state.active:
+        if self._state.active:
             clear = self.__handle_active_tx()
             if not clear:
                 # active transaction is still pending
@@ -401,14 +401,14 @@ class _Machine(SimpleTask):
         Qualification: There is no active transaction and
         there are transactions waiting in the queue.
         """
-        return self.__state.waiting and not self.__state.active
+        return self._state.waiting and not self._state.active
 
     @property
     def busy(self) -> bool:
         """Returns True if the tracker is busy."""
-        if self.__state.active:
+        if self._state.active:
             return True
-        if len(self.__state.waiting) > 0:
+        if len(self._state.waiting) > 0:
             return True
         return False
 
