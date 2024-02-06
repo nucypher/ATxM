@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = [
   { name="NuCypher", email="devs@nucypher.com" },
 ]
-description = "Automatic Tx Machine"
+description = "Automatic Transaction Machine (ATxM) for Ethereum"
 license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.8"
@@ -22,6 +22,7 @@ dependencies = [
 test = [
     "pytest",
     "pytest-twisted",
+    "eth-ape",
 ]
 
 [project.urls]
