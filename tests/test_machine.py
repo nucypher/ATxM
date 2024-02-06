@@ -9,13 +9,12 @@ from atxm.tx import FutureTx, PendingTx
 
 @pytest.fixture()
 def rpc_spy(mocker, w3):
-    spy = mocker.spy(w3, 'eth')
+    spy = mocker.spy(w3, "eth")
     return spy
 
 
 @pytest_twisted.inlineCallbacks
 def test_no_rpc_calls_when_idle(machine, clock, rpc_spy):
-
     assert not machine.busy
     assert len(machine.queued) == 0
 
@@ -31,7 +30,6 @@ def test_no_rpc_calls_when_idle(machine, clock, rpc_spy):
 
 
 def test_queue(machine, clock, rpc_spy, account, eip1559_transaction, mock_wake_sleep):
-
     wake, sleep = mock_wake_sleep
 
     # The machine is idle
@@ -61,19 +59,16 @@ def test_queue(machine, clock, rpc_spy, account, eip1559_transaction, mock_wake_
 
 
 @pytest_twisted.inlineCallbacks
-def test_broadcast(
-        machine, clock, eip1559_transaction, account, mocker
-):
-
+def test_broadcast(machine, clock, eip1559_transaction, account, mocker):
     assert not machine.busy
 
     # Queue a transaction
-    hook =  mocker.Mock()
+    hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=hook,
-        info={"message": f"something wonderful is happening..."},
+        info={"message": "something wonderful is happening..."},
     )
 
     # There is one queued transaction
@@ -103,9 +98,8 @@ def test_broadcast(
 
 @pytest_twisted.inlineCallbacks
 def test_finalize(
-        machine, clock, eip1559_transaction, account, mock_wake_sleep, mocker
+    machine, clock, eip1559_transaction, account, mock_wake_sleep, mocker
 ):
-
     # Queue a transaction
     hook = mocker.Mock()
     atx = machine.queue_transaction(
@@ -146,9 +140,7 @@ def test_finalize(
 
 
 @pytest_twisted.inlineCallbacks
-def test_follow(
-        chain, machine, clock, eip1559_transaction, account, mock_wake_sleep
-):
+def test_follow(chain, machine, clock, eip1559_transaction, account, mock_wake_sleep):
     wake, sleep = mock_wake_sleep
     atx = machine.queue_transaction(
         params=eip1559_transaction,

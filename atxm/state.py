@@ -13,6 +13,9 @@ from atxm.tx import (
     FutureTx,
     PendingTx,
     TxHash,
+    AsyncTx,
+    Fault,
+    FaultyTx,
 )
 from atxm.utils import fire_hook
 from atxm.logging import log
@@ -23,6 +26,7 @@ class _State:
 
     _FILEPATH = ".txs.json"
     __COUNTER = 0  # id generator
+    __FAULT_CACHE_SIZE = 10
 
     def __init__(self, disk_cache: bool, filepath: Optional[Path] = None):
         self.__filepath = filepath or self._FILEPATH
@@ -30,6 +34,7 @@ class _State:
         self.__queue: Deque[FutureTx] = deque()
         self.__active: Optional[PendingTx] = None
         self.finalized: Set[FinalizedTx] = set()
+        self.faulty: Deque[AsyncTx] = deque(maxlen=self.__FAULT_CACHE_SIZE)
 
         self.disk_cache = disk_cache
         if disk_cache:
@@ -111,6 +116,31 @@ class _State:
         self.__set_active(tx=tx)
         return tx
 
+    def fault(
+        self,
+        fault: Fault,
+        clear_active: bool,
+        error: Optional[str] = None,
+    ) -> None:
+        """Fault the active transaction."""
+        hook = self.__active.on_fault
+        if not self.__active:
+            raise RuntimeError("No active transaction to fault")
+        tx = self.__active
+        tx.fault = fault
+        tx.error = error
+        tx.__class__ = FaultyTx
+        tx: FaultyTx
+        self.faulty.append(tx)
+        log.warn(
+            f"[state] tracked faulty transaction #atx-{tx.id} "
+            f"{len(self.faulty)}/{self.faulty.maxlen} faults cached"
+        )
+        if clear_active:
+            self.clear_active()
+        if hook:
+            fire_hook(hook=hook, tx=tx)
+
     def finalize_active_tx(self, receipt: TxReceipt) -> None:
         """
         Finalizes a pending transaction.
@@ -167,11 +197,9 @@ class _State:
         _from: ChecksumAddress,
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable] = None,
-        on_timeout: Optional[Callable] = None,
-        on_capped: Optional[Callable] = None,
         on_finalized: Optional[Callable] = None,
-        on_revert: Optional[Callable] = None,
-        on_error: Optional[Callable] = None,
+        on_halt: Optional[Callable] = None,
+        on_fault: Optional[Callable] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
         tx = FutureTx(
@@ -183,11 +211,9 @@ class _State:
 
         # configure hooks
         tx.on_broadcast = on_broadcast
-        tx.on_timeout = on_timeout
-        tx.on_halt = on_capped
         tx.on_finalized = on_finalized
-        tx.on_revert = on_revert
-        tx.on_error = on_error
+        tx.on_halt = on_halt
+        tx.on_fault = on_fault
 
         self.__queue.append(tx)
         self.commit()

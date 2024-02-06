@@ -10,6 +10,7 @@ from web3.types import TxReceipt
 from atxm.exceptions import (
     Halt,
     TransactionReverted,
+    InsufficientFunds,
 )
 from atxm.state import _State
 from atxm.strategies import (
@@ -22,6 +23,7 @@ from atxm.tx import (
     PendingTx,
     TxHash,
     _make_tx_params,
+    Fault,
 )
 from atxm.utils import (
     _get_average_blocktime,
@@ -68,6 +70,7 @@ class _Machine(SimpleTask):
 
         # internal
         self._state = _State(disk_cache=disk_cache)
+        self.__pause = False
         super().__init__(interval=self.INTERVAL)
 
     #
@@ -112,27 +115,31 @@ class _Machine(SimpleTask):
         """
         Handles the currently tracked pending transaction.
 
-        The 5 possible outcomes for the pending ("active") transaction:
+        The 5 possible outcomes for the pending ("active") transaction in one cycle:
+
+        0. paused
         1. timeout
         2. reverted
         3. finalized
+        4. strategize: retry or wait
+        5. insufficient funds
 
-        4. strategize: halt
-        5. strategize: retry
-
-        Returns True if the pending transaction has been cleared
-        and the queue is ready for the next transaction.
+        Returns True if the next queued transaction can be broadcasted right now.
         """
+
+        # Outcome 0: the machine is paused
+        if self.__pause:
+            sender = self._state.active._from
+            self.log.critical(
+                f"[pause] insufficient funds! {sender} has been paused by the {self.strategy.name} strategy"
+            )
+            self._state.fault(
+                error=sender, fault=Fault.INSUFFICIENT_FUNDS, clear_active=False
+            )
+            return False
 
         # Outcome 1: pending transaction has timed out
         if self.__active_timed_out():
-            hook = self._state.active.on_timeout
-            self.log.warn(
-                f"[timeout] pending transaction {self._state.active.txhash.hex()} has timed out"
-            )
-            self._state.clear_active()
-            if hook:
-                fire_hook(hook=hook, tx=self._state.active)
             return True
 
         try:
@@ -140,11 +147,11 @@ class _Machine(SimpleTask):
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted:
-            revert_hook = self._state.active.on_revert
-            if revert_hook:
-                fire_hook(hook=revert_hook, tx=self._state.active)
-            # clear the active transaction slot
-            self._state.clear_active()
+            self._state.fault(
+                error=self._state.active.txhash.hex(),
+                fault=Fault.REVERT,
+                clear_active=True,
+            )
             return True
 
         # Outcome 3: pending transaction is finalized (final success)
@@ -159,13 +166,19 @@ class _Machine(SimpleTask):
             self._state.finalize_active_tx(receipt=receipt)
             return True
 
-        # Outcome 4: pending transaction is halted by strategy
-        if self._state.active.halt:
-            return False
-
         # Outcome 5: retry the pending transaction with the strategy
-        self.__strategize()
-        return False
+        try:
+            pending_tx = self.__strategize()
+            if pending_tx:
+                return False
+
+        # Outcome 6: pending transaction has insufficient funds
+        except InsufficientFunds:
+            self.__pause = True
+            self.log.critical(
+                f"[fault] pending transaction {self._state.active.txhash.hex()} has insufficient funds!"
+            )
+            return False
 
     #
     # Broadcast
@@ -208,6 +221,8 @@ class _Machine(SimpleTask):
 
     def __strategize(self) -> Optional[PendingTx]:
         """Retry the currently tracked pending transaction with the configured strategy."""
+        if self._state.active.halt:
+            return
         try:
             params = self.strategy.execute(
                 params=_make_tx_params(self._state.active.data),
@@ -310,20 +325,32 @@ class _Machine(SimpleTask):
             self.log.info(f"Transaction {txhash.hex()} is pending or unconfirmed")
             return 0
 
+    def __timeout_fault(self) -> None:
+        if self._state.active.halt:
+            self.log.warn(
+                f"[timeout] Transaction {self._state.active.txhash.hex()} has been pending for more than"
+                f"{self.timeout} seconds and has been capped by the {self.strategy.name} strategy"
+            )
+            self._state.fault(
+                error=self.strategy.name, fault=Fault.HALT, clear_active=True
+            )
+            return
+
+        self.log.warn(
+            f"[timeout] Transaction {self._state.active.txhash.hex()} has been pending for more than"
+            f"{self.timeout} seconds"
+        )
+        self._state.fault(fault=Fault.TIMEOUT, clear_active=True)
+
     def __active_timed_out(self) -> bool:
-        """
-        Returns True if the active transaction has timed out.
-        Does not perform any state changes.
-        """
+        """Returns True if the active transaction has timed out."""
         if not self._state.active:
             return False
         timeout = (time.time() - self._state.active.created) > self.timeout
         if timeout:
-            self.log.warn(
-                f"[timeout] Transaction {self._state.active.txhash.hex()} has been pending for more than"
-                f"{self.timeout} seconds"
-            )
+            self.__timeout_fault()
             return True
+
         time_remaining = round(
             self.timeout - (time.time() - self._state.active.created)
         )
@@ -396,8 +423,8 @@ class _Machine(SimpleTask):
         if self._state.active:
             clear = self.__handle_active_tx()
             if not clear:
-                # active transaction is still pending
-                return  # wait for next cycle
+                # active tx still pending. wait for next cycle.
+                return
 
         if self.fire:
             self.__broadcast()

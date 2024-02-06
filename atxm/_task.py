@@ -8,6 +8,7 @@ from twisted.logger import Logger
 
 class SimpleTask(ABC):
     """Simple Twisted Looping Call abstract base class."""
+
     INTERVAL = NotImplemented
     CLOCK = reactor
 

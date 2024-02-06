@@ -1,24 +1,15 @@
-import pytest
 import pytest_twisted
-from eth_account import Account
-from twisted.internet.task import Clock
 
-from atxm import AutomaticTxMachine
-from atxm.logging import log
 from atxm.tx import FutureTx
 
 
 @pytest_twisted.inlineCallbacks
 def test_machine(account, w3, legacy_transaction, eip1559_transaction, machine, clock):
-
     assert not machine.busy
     async_txs = machine.queue_transactions(
-        params=[
-            legacy_transaction,
-            eip1559_transaction
-        ],
+        params=[legacy_transaction, eip1559_transaction],
         signer=account,
-        info={"message": f"something wonderful is happening..."},
+        info={"message": "something wonderful is happening..."},
     )
 
     assert len(async_txs) == 2

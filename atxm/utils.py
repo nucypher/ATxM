@@ -31,9 +31,7 @@ def _get_average_blocktime(w3: Web3, sample_size: int) -> float:
 def _log_gas_weather(base_fee: Wei, tip: Wei) -> None:
     base_fee_gwei = Web3.from_wei(base_fee, "gwei")
     tip_gwei = Web3.from_wei(tip, "gwei")
-    log.info(
-        f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei"
-    )
+    log.info(f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei")
 
 
 def _get_receipt(w3: Web3, data: Union[TxData, PendingTxData]) -> Optional[TxReceipt]:
@@ -50,6 +48,7 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
     Try exceptionally hard not to crash the async tasks during dispatch.
     """
     with contextlib.suppress(Exception):
+
         def _hook() -> None:
             """I'm inside a thread!"""
             try:

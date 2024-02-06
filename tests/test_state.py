@@ -103,4 +103,4 @@
 #     )
 #     assert ursula.dkg_storage.get_aggregation_txhash(ritual_id=0) is not None
 
-    # participant already posted aggregated transcript
+# participant already posted aggregated transcript

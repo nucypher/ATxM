@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Callable, Dict, Optional
 
 from eth_typing import ChecksumAddress
@@ -10,16 +11,38 @@ from web3.types import TxData, TxParams, TxReceipt
 TxHash = HexBytes
 
 
+class Fault(Enum):
+    """
+    Fault codes for transaction processing.
+    These are alternate states that a transaction can enter
+    other than "finalized".
+    """
+
+    # Strategy has been running for too long
+    TIMEOUT = "timeout"
+
+    # Transaction has been capped and subsequently timed out
+    HALT = "halt"
+
+    # Transaction reverted
+    REVERT = "revert"
+
+    # Something went wrong
+    ERROR = "error"
+
+    # ...
+    INSUFFICIENT_FUNDS = "insufficient_funds"
+
+
 @dataclass
 class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
+    fault: Optional[Fault] = field(default=None, init=False)
     on_broadcast: Optional[Callable] = field(default=None, init=False)
     on_finalized: Optional[Callable] = field(default=None, init=False)
     on_halt: Optional[Callable] = field(default=None, init=False)
-    on_timeout: Optional[Callable] = field(default=None, init=False)
-    on_revert: Optional[Callable] = field(default=None, init=False)
-    on_error: Optional[Callable] = field(default=None, init=False)
+    on_fault: Optional[Callable] = field(default=None, init=False)
 
     def __repr__(self):
         return f"<{self.__class__.__name__} id={self.id} final={self.final}>"
@@ -116,6 +139,25 @@ class FinalizedTx(AsyncTx):
     def from_dict(cls, data: Dict):
         receipt = _deserialize_tx_receipt(data["receipt"])
         return cls(id=int(data["id"]), receipt=receipt)
+
+
+@dataclass
+class FaultyTx(AsyncTx):
+    final: bool = field(default=False, init=False)
+    fault: Fault
+    error: Optional[str] = None
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def to_dict(self) -> Dict:
+        return {"id": self.id, "error": str(self.error), "fault": self.fault.value}
+
+    @classmethod
+    def from_dict(cls, data: Dict):
+        return cls(
+            id=int(data["id"]), error=str(data["error"]), fault=Fault(data["fault"])
+        )
 
 
 def _serialize_tx_params(params: TxParams) -> Dict:

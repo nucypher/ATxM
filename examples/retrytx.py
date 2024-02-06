@@ -35,32 +35,32 @@ w3.middleware_onion.inject(geth_poa_middleware, layer=0)
 # Prepare Transaction
 #
 
-nonce = w3.eth.get_transaction_count(account.address, 'pending')
+nonce = w3.eth.get_transaction_count(account.address, "pending")
 
 # Legacy transaction
 gas_price = w3.eth.gas_price
 legacy_transaction = {
-    'chainId': CHAIN_ID,
-    'nonce': nonce,
-    'to': account.address,
-    'value': 0,
-    'gas': 21000,
-    'gasPrice': gas_price,
-    'data': b'',
+    "chainId": CHAIN_ID,
+    "nonce": nonce,
+    "to": account.address,
+    "value": 0,
+    "gas": 21000,
+    "gasPrice": gas_price,
+    "data": b"",
 }
 
 # EIP-1559 transaction
 base_fee = w3.eth.get_block("latest")["baseFeePerGas"]
 tip = w3.eth.max_priority_fee
 transaction_eip1559 = {
-    'chainId': CHAIN_ID,
-    'nonce': nonce + 1,
-    'to': account.address,
-    'value': 0,
-    'gas': 21000,
-    'maxPriorityFeePerGas': tip,
-    'maxFeePerGas': base_fee + tip,
-    'data': b'',
+    "chainId": CHAIN_ID,
+    "nonce": nonce + 1,
+    "to": account.address,
+    "value": 0,
+    "gas": 21000,
+    "maxPriorityFeePerGas": tip,
+    "maxFeePerGas": base_fee + tip,
+    "data": b"",
 }
 
 #
@@ -74,30 +74,16 @@ def on_broadcast(tx: PendingTx):
     print(f"View on PolygonScan: https://mumbai.polygonscan.com/tx/{txhash}")
 
 
-def on_transaction_finalized(tx: FinalizedTx):
-    txhash = tx.receipt['transactionHash'].hex()
+def on_finalized(tx: FinalizedTx):
+    txhash = tx.receipt["transactionHash"].hex()
     mumbai_polygonscan = f"https://mumbai.polygonscan.com/tx/{txhash}"
     print(f"[alert] Transaction has been finalized ({txhash})!")
     print(f"View on PolygonScan: {mumbai_polygonscan}")
 
 
-def on_transaction_capped(tx: PendingTx):
+def on_fault(tx: PendingTx):
     txhash = tx.txhash.hex()
     print(f"[alert] Transaction has been capped ({txhash})!")
-
-
-def on_transaction_timeout(tx: PendingTx):
-    txhash = tx.txhash.hex()
-    print(f"[alert] Transaction has timed out ({txhash})!")
-
-
-def on_transaction_reverted(tx: FinalizedTx):
-    txhash = tx.receipt['transactionHash'].hex()
-    print(f"[alert] Transaction reverted ({txhash})!")
-
-
-def on_error(tx: PendingTx, error: Exception):
-    print(f"[alert] Transaction #{tx.id} has errored ({error})!")
 
 
 #
@@ -106,21 +92,14 @@ def on_error(tx: PendingTx, error: Exception):
 
 machine = AutomaticTxMachine(w3=w3)
 _future_txs = machine.queue_transactions(
-
     # required
-    params=[
-        legacy_transaction,
-        transaction_eip1559
-    ],
     signer=account,
-
+    params=[legacy_transaction, transaction_eip1559],
     # optional
-    info={"message": f"something wonderful is happening..."},
+    info={"message": "something wonderful is happening..."},
     on_broadcast=on_broadcast,
-    on_revert=on_transaction_reverted,
-    on_finalized=on_transaction_finalized,
-    on_capped=on_transaction_capped,
-    on_timeout=on_transaction_timeout
+    on_finalized=on_finalized,
+    on_fault=on_fault,
 )
 
 reactor.run()

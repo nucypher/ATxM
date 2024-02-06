@@ -18,13 +18,13 @@ def account(accounts):
 def legacy_transaction(account, w3):
     gas_price = w3.eth.gas_price
     params = {
-        'chainId': 1337,
-        'nonce': 0,
-        'to': account.address,
-        'value': 0,
-        'gas': 21000,
-        'gasPrice': gas_price,
-        'data': b'',
+        "chainId": 1337,
+        "nonce": 0,
+        "to": account.address,
+        "value": 0,
+        "gas": 21000,
+        "gasPrice": gas_price,
+        "data": b"",
     }
     return params
 
@@ -34,14 +34,14 @@ def eip1559_transaction(account, w3):
     base_fee = w3.eth.get_block("latest")["baseFeePerGas"]
     tip = w3.eth.max_priority_fee
     params = {
-        'chainId': 1337,
-        'nonce': 0,
-        'to': account.address,
-        'value': 0,
-        'gas': 21000,
-        'maxPriorityFeePerGas': tip,
-        'maxFeePerGas': base_fee + tip,
-        'data': b'',
+        "chainId": 1337,
+        "nonce": 0,
+        "to": account.address,
+        "value": 0,
+        "gas": 21000,
+        "maxPriorityFeePerGas": tip,
+        "maxFeePerGas": base_fee + tip,
+        "data": b"",
     }
     return params
 
@@ -66,6 +66,6 @@ def clock(machine):
 
 @pytest.fixture(autouse=True)
 def mock_wake_sleep(machine, mocker):
-    wake = mocker.patch.object(machine, '_wake')
-    sleep = mocker.patch.object(machine, '_sleep')
+    wake = mocker.patch.object(machine, "_wake")
+    sleep = mocker.patch.object(machine, "_sleep")
     return wake, sleep

@@ -34,12 +34,10 @@ to retrieve the transaction's receipt when it is finalized.
 
 Hooks are fired in a dedicated thread for lifecycle events.
 
-- on_queued: When a transaction is queued.
 - on_broadcast: When a transaction is broadcasted.
 - on_finalized: When a transaction is finalized.
-- on_capped: When a transaction capped by its retry strategy.
-- on_timeout: When a transaction times out.
-- on_reverted: When a transaction reverted.
+- on_halted: When a transaction is halted by the strategy.
+- on_fault: When a transaction reverted or another error occurred.
 
 ##### Event Loop Support
 
