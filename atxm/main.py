@@ -40,7 +40,7 @@ class AutomaticTxMachine(_Machine):
             self.signers[signer.address] = signer
         tx = self._state.queue(_from=signer.address, params=params, *args, **kwargs)
         if not self._task.running:
-            self._auto_start()
+            self._wake()
         return tx
 
     def queue_transactions(

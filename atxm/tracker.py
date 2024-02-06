@@ -81,6 +81,8 @@ class _Machine(SimpleTask):
             f"[done] returning to idle mode with "
             f"{self._task.interval} second interval"
         )
+        if not self.busy:
+            self._sleep()
 
     def __work_mode(self) -> None:
         """Start work mode (speed up)"""
@@ -92,14 +94,14 @@ class _Machine(SimpleTask):
         )
         self.log.info(f"[working] cycle interval is {self._task.interval} seconds")
 
-    def _auto_start(self):
-        """Start the machine if it's not already running."""
+    def _wake(self) -> None:
         if not self._task.running:
+            log.info("[wake] waking up")
             self.start(now=True)
 
-    def _auto_stop(self):
-        """Stop the machine if it's running."""
+    def _sleep(self) -> None:
         if self._task.running:
+            log.info("[sleep] sleeping")
             self.stop()
 
     #
