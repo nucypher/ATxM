@@ -30,7 +30,7 @@ class AsyncTxStrategy(ABC):
         """
         Execute the strategy.
 
-        Will be called by the transaction tracker when a
+        Will be called by the transaction machine when a
         transaction is ready to be retried. Accepts a TxParams
         dictionary containing transaction data from the most
         recent previous attempt.

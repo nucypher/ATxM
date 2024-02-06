@@ -34,7 +34,7 @@ from ._task import SimpleTask
 
 
 class _Machine(SimpleTask):
-    """Do not import this - use the public TransactionTracker instead."""
+    """Do not import this - use the public `AutomaticTxMachine` instead."""
 
     # tweaks
     _STRATEGY = SpeedupStrategy
@@ -375,11 +375,11 @@ class _Machine(SimpleTask):
         self._state.commit()
         time.sleep(self._RPC_THROTTLE)
         if not self._task.running:
-            self.log.warn("[recovery] restarting transaction tracker!")
+            self.log.warn("[recovery] restarting transaction machine!")
             self.start(now=False)  # take a breather
 
     def run(self) -> None:
-        """Executes one cycle of the tracker."""
+        """Execute one cycle"""
 
         self.__monitor_finalized()
         if not self.busy:
@@ -417,7 +417,7 @@ class _Machine(SimpleTask):
 
     @property
     def busy(self) -> bool:
-        """Returns True if the tracker is busy."""
+        """Returns True if the machine is busy."""
         if self._state.active:
             return True
         if len(self._state.waiting) > 0:
@@ -426,9 +426,9 @@ class _Machine(SimpleTask):
 
     def start(self, now: bool = True) -> Deferred:
         if now:
-            self.log.info("[txtracker] starting transaction tracker now")
+            self.log.info("[atxm] starting async transaction machine now")
         else:
             self.log.info(
-                f"[txtracker] starting transaction tracker in {self.INTERVAL} seconds"
+                f"[atxm] starting async transaction machine in {self.INTERVAL} seconds"
             )
         return super().start(now=now)

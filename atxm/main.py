@@ -3,7 +3,7 @@ from typing import List, Set
 from eth_account.signers.local import LocalAccount
 from web3.types import TxParams
 
-from atxm.tracker import _Machine
+from atxm.machine import _Machine
 from atxm.tx import (
     FinalizedTx,
     FutureTx,
@@ -49,7 +49,7 @@ class AutomaticTxMachine(_Machine):
         """
         Queue a list of transactions for broadcast and subsequent tracking.
 
-        Sorts incoming transactions by nonce. The tracker is tolerant
+        Sorts incoming transactions by nonce. The machine is tolerant
         to nonce collisions, but it's best to avoid them when possible,
         plus it's a good practice to broadcast transactions in the
         order they were originally created in by the caller.

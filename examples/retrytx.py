@@ -4,15 +4,12 @@ from twisted.internet import reactor
 from web3 import Web3, HTTPProvider
 from web3.middleware import geth_poa_middleware
 
-from atxm.logging import log
 from atxm.main import AutomaticTxMachine
 from atxm.tx import PendingTx, FinalizedTx
 
 #
 # Configuration
 #
-
-log.debug("Starting transaction tracker example...")
 
 CHAIN_ID = 80001
 
@@ -107,8 +104,8 @@ def on_error(tx: PendingTx, error: Exception):
 # Queue Transaction(s)
 #
 
-tracker = AutomaticTxMachine(w3=w3)
-_future_txs = tracker.queue_transactions(
+machine = AutomaticTxMachine(w3=w3)
+_future_txs = machine.queue_transactions(
 
     # required
     params=[
@@ -126,5 +123,4 @@ _future_txs = tracker.queue_transactions(
     on_timeout=on_transaction_timeout
 )
 
-tracker.start(now=True)
 reactor.run()
