@@ -7,16 +7,16 @@ Transactions are queued and broadcasted in a first-in-first-out (FIFO) order.
 
 ##### Throttle 
 
-There are two rates, idle (slow scan) and work (fast scan),
-to reduce the use of network resources when there are no transactions to track.
-When a transaction is queued, the tracker switches to work mode and
-starts scanning for transaction receipts. When the queue is empty,
-the tracker switches to idle mode and scans less frequently.
+There are three rates, work (fast scan), idle (slow scan) and sleep (zero activity).
+This reduces the use of resources when there are no transactions to track.
+When a transaction is queued, the machine wakes up and goes to work.
+When all work is complete it eases into idle mode and eventually goes to sleep.
 
 ##### Retry Strategies
 
-The tracker supports a generic configurable
-interface for retry strategies.
+The tracker supports a generic configurable interface for retry strategies (AsynxTxStrategy).
+These strategies are used to determine when to retry a transaction and how to do so.
+They can be configured to use any kind of custom context, like gas oracles.
 
 ##### Crash-Tolerance
 
@@ -32,7 +32,7 @@ to retrieve the transaction's receipt when it is finalized.
 
 ##### Lifecycle Hooks 
 
-The tracker provides hooks for transaction lifecycle events.
+Hooks are fired in a dedicated thread for lifecycle events.
 
 - on_queued: When a transaction is queued.
 - on_broadcast: When a transaction is broadcasted.
@@ -40,3 +40,8 @@ The tracker provides hooks for transaction lifecycle events.
 - on_capped: When a transaction capped by its retry strategy.
 - on_timeout: When a transaction times out.
 - on_reverted: When a transaction reverted.
+
+##### Event Loop Support
+
+Currently, the machine is designed to work Twisted.
+However, it can be adapted to work with any event loop.
