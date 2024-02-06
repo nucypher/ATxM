@@ -66,13 +66,13 @@ def machine(w3, clock):
 
 
 @pytest_twisted.inlineCallbacks
-def test_machine(account, w3, legacy_transaction, transaction_eip1559, machine, clock):
+def test_machine(account, w3, legacy_transaction, eip1559_transaction, machine, clock):
 
     assert not machine.busy
     async_txs = machine.queue_transactions(
         params=[
             legacy_transaction,
-            transaction_eip1559
+            eip1559_transaction
         ],
         signer=account,
         info={"message": f"something wonderful is happening..."},
