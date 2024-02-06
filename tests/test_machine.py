@@ -1,6 +1,9 @@
 import pytest
 
 import pytest_twisted
+from twisted.internet import reactor
+from twisted.internet.task import deferLater
+
 from atxm.tx import FutureTx, PendingTx
 
 
@@ -58,7 +61,7 @@ def test_queue(machine, clock, rpc_spy, account, eip1559_transaction, mock_wake_
 
 
 @pytest_twisted.inlineCallbacks
-def test_broadcast_queue_transactions(
+def test_broadcast(
         machine, clock, eip1559_transaction, account, mocker
 ):
 
@@ -93,11 +96,13 @@ def test_broadcast_queue_transactions(
     assert not atx.final
     assert atx.txhash
 
-    # assert hook.call_count == 1
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert hook.call_count == 1
 
 
 @pytest_twisted.inlineCallbacks
-def test_finalize_pending_transaction(
+def test_finalize(
         machine, clock, eip1559_transaction, account, mock_wake_sleep, mocker
 ):
 
@@ -135,11 +140,13 @@ def test_finalize_pending_transaction(
     assert atx.final
     assert atx.receipt
 
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
 
 @pytest_twisted.inlineCallbacks
-def test_follow_pending_transaction(
+def test_follow(
         chain, machine, clock, eip1559_transaction, account, mock_wake_sleep
 ):
     wake, sleep = mock_wake_sleep
