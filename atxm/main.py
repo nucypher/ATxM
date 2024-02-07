@@ -1,3 +1,4 @@
+from copy import copy
 from typing import List, Set
 
 from eth_account.signers.local import LocalAccount
@@ -14,6 +15,24 @@ from atxm.tx import (
 
 class AutomaticTxMachine(_Machine):
     @property
+    def paused(self) -> bool:
+        return bool(self.__pause)
+
+    @property
+    def running(self) -> bool:
+        """Determine whether the task is already running."""
+        return bool(self._task.running)
+
+    @property
+    def busy(self) -> bool:
+        """Returns True if the machine is busy."""
+        if self._state.pending:
+            return True
+        if len(self._state.queue) > 0:
+            return True
+        return False
+
+    @property
     def queued(self) -> List[FutureTx]:
         """Return a list of queued transactions."""
         return list(self._state.queue)
@@ -21,12 +40,12 @@ class AutomaticTxMachine(_Machine):
     @property
     def pending(self) -> PendingTx:
         """Return the active transaction if there is one."""
-        return self._state.pending or None
+        return copy(self._state.pending or None)
 
     @property
     def finalized(self) -> Set[FinalizedTx]:
         """Return a set of finalized transactions."""
-        return self._state.finalized
+        return set(self._state.finalized)
 
     @property
     def faults(self) -> List[AsyncTx]:
