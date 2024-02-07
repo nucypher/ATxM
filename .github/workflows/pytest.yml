@@ -45,6 +45,7 @@ jobs:
       - name: Tests (Coverage)
         if: matrix.python-version == '3.12'
         run: |
+          pip install coverage
           coverage run --data-file=data -m pytest tests
           coverage xml -i --data-file=data -o coverage.xml
 
