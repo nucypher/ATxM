@@ -1,7 +1,7 @@
 import json
 import time
 from collections import deque
-from copy import deepcopy, copy
+from copy import copy
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, Deque, Dict, Optional, Set, Tuple
