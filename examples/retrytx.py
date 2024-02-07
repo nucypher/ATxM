@@ -1,5 +1,6 @@
+import os
+
 from eth_account import Account
-from hexbytes import HexBytes
 from twisted.internet import reactor
 from web3 import Web3, HTTPProvider
 from web3.middleware import geth_poa_middleware
@@ -13,13 +14,9 @@ from atxm.tx import PendingTx, FinalizedTx
 
 CHAIN_ID = 80001
 
-# ENDPOINT = os.environ["WEB3_PROVIDER_URI"]
-ENDPOINT = "https://polygon-mumbai.infura.io/v3/a11313ddcf61443898b6a47e952d255c"
+ENDPOINT = os.environ["WEB3_PROVIDER_URI"]
 
-# PRIVATE_KEY = os.environ["PRIVATE_KEY"]
-PRIVATE_KEY = HexBytes(
-    "0x900edb9e8214b2353f82aa195e915128f419a92cfb8bbc0f4784f10ef4112b86"
-)
+PRIVATE_KEY = os.environ["PRIVATE_KEY"]
 
 #
 # Setup
