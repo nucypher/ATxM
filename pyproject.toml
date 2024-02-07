@@ -1,6 +1,6 @@
 [project]
 name = "atxm"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   { name="NuCypher", email="devs@nucypher.com" },
 ]
@@ -9,22 +9,26 @@ license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: AGPL-3.0",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Intended Audience :: Developers",
+    "Development Status :: 3 - Alpha",
+    "Natural Language :: English",
+    "Typing :: Typed",
     "Operating System :: OS Independent",
-]
-dependencies = [
-    "web3",
-    "twisted"
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
 ]
 
-[project.optional-dependencies] # Optional
-test = [
-    "pytest",
-    "pytest-mock",
-    "pytest-twisted",
-    "eth-ape",
-]
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+optional-dependencies = {test = { file = ["dev-requirements.txt"] }}
 
 [project.urls]
 Homepage = "https://github.com/nucypher/atxm"

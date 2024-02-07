@@ -44,13 +44,7 @@ class Wait(Exception):
 class Fault(Exception):
     """raised when a transaction has been faulted"""
 
-    def __init__(
-            self,
-            tx: "AsyncTx",
-            fault: Faults,
-            clear: bool,
-            message: str
-    ):
+    def __init__(self, tx, fault: Faults, clear: bool, message: str):
         self.tx = tx
         self.fault = fault
         self.message = message

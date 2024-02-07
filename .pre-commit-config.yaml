@@ -1,0 +1,50 @@
+# Install with: pre-commit install && pre-commit install -t pre-push
+repos:
+
+  - repo: local
+    hooks:
+
+      - id: tests
+        name: Run Tests
+        entry: scripts/run_tests.sh
+        language: system
+        types: [python]
+        stages: [push]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.3.0
+    hooks:
+
+      # Git
+      - id: forbid-new-submodules
+
+      # Files
+      - id: check-byte-order-marker
+      - id: check-executables-have-shebangs
+      - id: check-added-large-files
+      - id: check-symlinks
+      - id: end-of-file-fixer
+
+      # Syntax
+      - id: check-yaml
+      - id: check-toml
+      - id: check-ast
+
+      # Code
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: detect-private-key
+
+  - repo: https://github.com/akaihola/darker
+    rev: 1.7.2
+    hooks:
+    -   id: darker
+        args: ["--check"]
+        stages: [push]
+    -   id: darker
+        stages: [commit]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 'v0.1.4'
+    hooks:
+    - id: ruff

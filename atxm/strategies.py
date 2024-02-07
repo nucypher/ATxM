@@ -6,7 +6,9 @@ from web3 import Web3
 from web3.types import Gwei, TxParams, Wei, PendingTx
 
 from atxm.exceptions import (
-    Wait, Fault, Faults,
+    Wait,
+    Fault,
+    Faults,
 )
 from atxm.logging import log
 from atxm.utils import (
@@ -69,7 +71,9 @@ class InsufficientFundsPause(AsyncTxStrategy):
     def execute(self, pending: PendingTx) -> TxParams:
         balance = self.w3.eth.get_balance(pending._from)
         if balance == 0:
-            self.log.warn(f"Insufficient funds for transaction #{pending.params['nonce']}")
+            self.log.warn(
+                f"Insufficient funds for transaction #{pending.params['nonce']}"
+            )
             raise Fault(
                 tx=pending,
                 fault=Faults.INSUFFICIENT_FUNDS,
@@ -99,9 +103,7 @@ class TimeoutPause(AsyncTxStrategy):
         if timeout:
             return True
 
-        time_remaining = round(
-            self.timeout - (time.time() - pending.created)
-        )
+        time_remaining = round(self.timeout - (time.time() - pending.created))
         minutes = round(time_remaining / 60)
         remainder_seconds = time_remaining % 60
         end_time = time.time() + time_remaining

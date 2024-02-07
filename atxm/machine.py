@@ -10,7 +10,9 @@ from web3.types import TxReceipt, TxParams
 
 from atxm.exceptions import (
     Wait,
-    TransactionReverted, Fault, Faults,
+    TransactionReverted,
+    Fault,
+    Faults,
 )
 from atxm.state import _State
 from atxm.strategies import (
@@ -69,9 +71,7 @@ class _Machine(SimpleTask):
         # public
         self.w3 = w3
         self.signers = {}
-        self.strategies = [
-            s(w3) for s in self.__DEFAULT_STRATEGIES
-        ]
+        self.strategies = [s(w3) for s in self.__DEFAULT_STRATEGIES]
         if strategies:
             self.strategies.extend(list(strategies))
 
@@ -207,14 +207,14 @@ class _Machine(SimpleTask):
     def pause(self) -> None:
         self.__pause = True
         self.log.warn(
-            f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused: {e}"
+            f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused."
         )
         hook = self._state.pending.on_pause
         if hook:
             fire_hook(hook=hook, tx=self._state.pending)
 
     def resume(self) -> None:
-        self.log.info(f"[pause] pause lifted by strategy")
+        self.log.info("[pause] pause lifted by strategy")
         self.__pause = False  # resume
 
     def __strategize(self) -> Optional[PendingTx]:
@@ -246,11 +246,9 @@ class _Machine(SimpleTask):
 
         # (!) retry the transaction with the new parameters
         retry_params = TxParams(_active_copy.params)
-        _names = ' -> '.join(s.name for s in self.strategies)
+        _names = " -> ".join(s.name for s in self.strategies)
         pending_tx = self.__fire(tx=retry_params, msg=_names)
-        self.log.info(
-            f"[retry] transaction #{pending_tx.id} has been re-broadcasted"
-        )
+        self.log.info(f"[retry] transaction #{pending_tx.id} has been re-broadcasted")
 
         return pending_tx
 
@@ -366,7 +364,7 @@ class _Machine(SimpleTask):
         """Execute one cycle"""
 
         if self.__pause:
-            self.log.warn(f"[pause] paused")
+            self.log.warn("[pause] paused")
             return
 
         self.__monitor_finalized()
