@@ -24,6 +24,9 @@ test = [
     "pytest-mock",
     "pytest-twisted",
     "eth-ape",
+    "ruff",
+    "black",
+    "pre-commit",
 ]
 
 [project.urls]
