@@ -13,21 +13,12 @@ classifiers = [
     "License :: OSI Approved :: AGPL-3.0",
     "Operating System :: OS Independent",
 ]
-dependencies = [
-    "web3",
-    "twisted"
-]
 
-[project.optional-dependencies] # Optional
-test = [
-    "pytest",
-    "pytest-mock",
-    "pytest-twisted",
-    "eth-ape",
-    "ruff",
-    "black",
-    "pre-commit",
-]
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+optional-dependencies = {test = { file = ["dev-requirements.txt"] }}
 
 [project.urls]
 Homepage = "https://github.com/nucypher/atxm"
