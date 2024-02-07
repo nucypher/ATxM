@@ -162,3 +162,4 @@ cython_debug/
 
 # eth-ape
 tests/.build/
+/.build/
