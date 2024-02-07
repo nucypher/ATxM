@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+web3 = "*"
+twisted = "*"
+
+[dev-packages]
+pytest = "*"
+pytest-mock = "*"
+pytest-twisted = "*"
+pre-commit = "*"
+black = "*"
+ruff = "*"
+
+[requires]
+python_version = "3"
