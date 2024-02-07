@@ -14,23 +14,28 @@ from atxm.tx import (
 
 
 class AutomaticTxMachine(_Machine):
-    @property
-    def paused(self) -> bool:
-        return bool(self.__pause)
+    def start(self, now: bool = False) -> None:
+        """Start the machine. if now is True, start immediately."""
+        super()._start(now=now)
+
+    def stop(self) -> None:
+        """Stop the machine."""
+        super()._stop()
 
     @property
     def running(self) -> bool:
-        """Determine whether the task is already running."""
+        """Return True if the machine is running."""
         return bool(self._task.running)
+
+    @property
+    def paused(self) -> bool:
+        """Return True if the machine is paused."""
+        return bool(self.__pause)
 
     @property
     def busy(self) -> bool:
         """Returns True if the machine is busy."""
-        if self._state.pending:
-            return True
-        if len(self._state.queue) > 0:
-            return True
-        return False
+        return super()._busy
 
     @property
     def queued(self) -> List[FutureTx]:

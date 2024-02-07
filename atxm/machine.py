@@ -1,4 +1,3 @@
-import time
 from copy import deepcopy
 from logging import Logger
 from typing import Optional, Union, List, Type
@@ -29,13 +28,13 @@ from atxm.tx import (
     FutureTx,
     PendingTx,
     TxHash,
-    _make_tx_params,
 )
 from atxm.utils import (
     _get_average_blocktime,
     _get_receipt,
     _handle_rpc_error,
     fire_hook,
+    _make_tx_params,
 )
 from .logging import log
 
@@ -97,22 +96,27 @@ class _Machine:
 
     @property
     def _start_time(self) -> float:
-        return self._task.start_time
+        return self._task.starttime
+
+    @property
+    def _busy(self) -> bool:
+        """Returns True if the machine is busy."""
+        return bool(self._state.queue or self._state.pending)
 
     #
     # Async
     #
 
-    def handle_errors(self, *args, **kwargs):
+    def _handle_errors(self, *args, **kwargs):
         """Handles unexpected errors during task processing."""
+        self._state.commit()
         self.log.warn(
             "[recovery] error during transaction: {}".format(args[0].getTraceback())
         )
-        self._state.commit()
-        time.sleep(self._RPC_THROTTLE)
-        if not self._task.running:
-            self.log.warn("[recovery] restarting transaction machine!")
-            self.start(now=False)  # take a breather
+        if self._task.running:
+            return
+        self.log.warn("[recovery] restarting transaction machine!")
+        self._start(now=False)
 
     def _cycle(self) -> None:
         """Execute one cycle"""
@@ -122,7 +126,7 @@ class _Machine:
             return
 
         self.__monitor_finalized()
-        if not self.busy:
+        if not self._busy:
             self.log.info(f"[idle] cycle interval is {self._task.interval} seconds")
             return
 
@@ -146,30 +150,25 @@ class _Machine:
 
         # After one work cycle, return to idle mode
         # if the machine is not busy.
-        if not self.busy:
+        if not self._busy:
             self.__idle_mode()
 
     #
     # Throttle
     #
 
-    def start(self, now: bool = False) -> Deferred:
-        if now:
-            self.log.info("[atxm] starting async transaction machine now")
-        else:
-            self.log.info(
-                f"[atxm] starting async transaction machine in {self._interval} seconds"
-            )
-        if self.running:
+    def _start(self, now: bool = False) -> Deferred:
+        if self._task.running:
             return self._task.deferred
-
+        when = "now" if now else f"in {self._task.interval} seconds"
+        self.log.info(f"[atxm] starting async transaction machine {when}")
         d = self._task.start(interval=self._interval, now=now)
-        d.addErrback(self.handle_errors)
+        d.addErrback(self._handle_errors)
         return d
 
-    def stop(self):
+    def _stop(self):
         """Stop task."""
-        if self.running:
+        if self._task.running:
             self._task.stop()
 
     def __idle_mode(self) -> None:
@@ -179,7 +178,7 @@ class _Machine:
             f"[done] returning to idle mode with "
             f"{self._task.interval} second interval"
         )
-        if not self.busy:
+        if not self._busy:
             self._sleep()
 
     def __work_mode(self) -> None:
@@ -195,12 +194,12 @@ class _Machine:
     def _wake(self) -> None:
         if not self._task.running:
             log.info("[wake] waking up")
-            self.start(now=True)
+            self._start(now=True)
 
     def _sleep(self) -> None:
         if self._task.running:
             log.info("[sleep] sleeping")
-            self.stop()
+            self._stop()
 
     #
     # Lifecycle

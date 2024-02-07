@@ -4,8 +4,8 @@ from typing import Callable, Optional, Union
 from twisted.internet import reactor
 from web3 import Web3
 from web3.exceptions import TransactionNotFound
-from web3.types import PendingTx as PendingTxData
-from web3.types import RPCError, TxData, TxReceipt, Wei
+from web3.types import PendingTx as PendingTxData, TxData, TxParams
+from web3.types import RPCError, TxReceipt, Wei
 
 from atxm.exceptions import (
     InsufficientFunds,
@@ -74,6 +74,35 @@ def _handle_rpc_error(e: Exception, tx: FutureTx) -> None:
         if error["code"] == -32000:
             if "insufficient funds" in error["message"]:
                 raise InsufficientFunds
-        hook = tx.on_error
+        hook = tx.on_fault
         if hook:
             fire_hook(hook=hook, tx=tx, error=e)
+
+
+def _make_tx_params(data: TxData) -> TxParams:
+    """
+    TxData -> TxParams: Creates a transaction parameters
+    object from a transaction data object for broadcast.
+
+    This operation is performed in order to "turnaround" the transaction
+    data object as queried from the RPC provider (eth_getTransaction) into a transaction
+    parameters object for strategics and re-broadcast (LocalAccount.sign_transaction).
+    """
+    params = TxParams(
+        {
+            "nonce": data["nonce"],
+            "chainId": data["chainId"],
+            "gas": data["gas"],
+            "to": data["to"],
+            "value": data["value"],
+            "data": data.get("data", b""),
+        }
+    )
+    if "gasPrice" in data:
+        params["type"] = "0x01"
+        params["gasPrice"] = data["gasPrice"]
+    elif "maxFeePerGas" in data:
+        params["type"] = "0x02"
+        params["maxFeePerGas"] = data["maxFeePerGas"]
+        params["maxPriorityFeePerGas"] = data["maxPriorityFeePerGas"]
+    return params
