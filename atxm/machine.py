@@ -204,6 +204,19 @@ class _Machine(SimpleTask):
             fire_hook(hook=tx.on_broadcast, tx=tx)
         return pending_tx
 
+    def pause(self) -> None:
+        self.__pause = True
+        self.log.warn(
+            f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused: {e}"
+        )
+        hook = self._state.pending.on_pause
+        if hook:
+            fire_hook(hook=hook, tx=self._state.pending)
+
+    def resume(self) -> None:
+        self.log.info(f"[pause] pause lifted by strategy")
+        self.__pause = False  # resume
+
     def __strategize(self) -> Optional[PendingTx]:
         """Retry the currently tracked pending transaction with the configured strategy."""
         if not self._state.pending:
@@ -213,14 +226,8 @@ class _Machine(SimpleTask):
         for strategy in self.strategies:
             try:
                 params = strategy.execute(pending=_active_copy)
-            except Wait as e:
-                self.__pause = True
-                self.log.warn(
-                    f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused: {e}"
-                )
-                hook = self._state.pending.on_pause
-                if hook:
-                    fire_hook(hook=hook, tx=self._state.pending)
+            except Wait:
+                self.pause()
                 return
             except Fault as e:
                 self._state.fault(
@@ -230,14 +237,16 @@ class _Machine(SimpleTask):
                 )
                 return
             if params:
+                # in case the strategy accidentally returns None
+                # keep the parameters as they are.
                 _active_copy.params.update(params)
+
             if self.__pause:
-                self.log.info(f"[pause] pause lifted by strategy {strategy.name}")
-                self.__pause = False
+                self.resume()
 
         # (!) retry the transaction with the new parameters
         retry_params = TxParams(_active_copy.params)
-        _names = ', '.join(s.name for s in self.strategies)
+        _names = ' -> '.join(s.name for s in self.strategies)
         pending_tx = self.__fire(tx=retry_params, msg=_names)
         self.log.info(
             f"[retry] transaction #{pending_tx.id} has been re-broadcasted"
