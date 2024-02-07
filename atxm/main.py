@@ -16,12 +16,12 @@ class AutomaticTxMachine(_Machine):
     @property
     def queued(self) -> List[FutureTx]:
         """Return a list of queued transactions."""
-        return list(self._state.waiting)
+        return list(self._state.queue)
 
     @property
     def pending(self) -> PendingTx:
         """Return the active transaction if there is one."""
-        return self._state.active or None
+        return self._state.pending or None
 
     @property
     def finalized(self) -> Set[FinalizedTx]:
@@ -43,7 +43,7 @@ class AutomaticTxMachine(_Machine):
         """
         if signer.address not in self.signers:
             self.signers[signer.address] = signer
-        tx = self._state.queue(_from=signer.address, params=params, *args, **kwargs)
+        tx = self._state._queue(_from=signer.address, params=params, *args, **kwargs)
         if not self._task.running:
             self._wake()
         return tx

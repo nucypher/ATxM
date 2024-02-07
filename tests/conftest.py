@@ -64,6 +64,11 @@ def clock(machine):
     return machine._task.clock
 
 
+@pytest.fixture
+def interval(machine):
+    return 1
+
+
 @pytest.fixture(autouse=True)
 def mock_wake_sleep(machine, mocker):
     wake = mocker.patch.object(machine, "_wake")

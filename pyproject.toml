@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies] # Optional
 test = [
     "pytest",
+    "pytest-mock",
     "pytest-twisted",
     "eth-ape",
 ]

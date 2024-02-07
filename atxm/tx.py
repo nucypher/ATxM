@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Callable, Dict, Optional
 
 from eth_typing import ChecksumAddress
@@ -8,40 +7,19 @@ from eth_utils import encode_hex
 from hexbytes import HexBytes
 from web3.types import TxData, TxParams, TxReceipt
 
+from atxm.exceptions import Faults
+
 TxHash = HexBytes
-
-
-class Fault(Enum):
-    """
-    Fault codes for transaction processing.
-    These are alternate states that a transaction can enter
-    other than "finalized".
-    """
-
-    # Strategy has been running for too long
-    TIMEOUT = "timeout"
-
-    # Transaction has been capped and subsequently timed out
-    HALT = "halt"
-
-    # Transaction reverted
-    REVERT = "revert"
-
-    # Something went wrong
-    ERROR = "error"
-
-    # ...
-    INSUFFICIENT_FUNDS = "insufficient_funds"
 
 
 @dataclass
 class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
-    fault: Optional[Fault] = field(default=None, init=False)
+    fault: Optional[Faults] = field(default=None, init=False)
     on_broadcast: Optional[Callable] = field(default=None, init=False)
     on_finalized: Optional[Callable] = field(default=None, init=False)
-    on_halt: Optional[Callable] = field(default=None, init=False)
+    on_pause: Optional[Callable] = field(default=None, init=False)
     on_fault: Optional[Callable] = field(default=None, init=False)
 
     def __repr__(self):
@@ -99,7 +77,6 @@ class PendingTx(AsyncTx):
     txhash: TxHash
     created: int
     data: Optional[TxData] = None
-    halt: bool = False
 
     def __hash__(self) -> int:
         return hash(self.txhash)
@@ -110,7 +87,6 @@ class PendingTx(AsyncTx):
             "txhash": self.txhash.hex(),
             "created": self.created,
             "data": self.data,
-            "halt": self.halt,
         }
 
     @classmethod
@@ -119,7 +95,6 @@ class PendingTx(AsyncTx):
             id=int(data["id"]),
             txhash=HexBytes(data["txhash"]),
             created=int(data["created"]),
-            halt=bool(data["halt"]),
             data=dict(data) if data else dict(),
         )
 
@@ -144,7 +119,7 @@ class FinalizedTx(AsyncTx):
 @dataclass
 class FaultyTx(AsyncTx):
     final: bool = field(default=False, init=False)
-    fault: Fault
+    fault: Faults
     error: Optional[str] = None
 
     def __hash__(self) -> int:
@@ -156,7 +131,7 @@ class FaultyTx(AsyncTx):
     @classmethod
     def from_dict(cls, data: Dict):
         return cls(
-            id=int(data["id"]), error=str(data["error"]), fault=Fault(data["fault"])
+            id=int(data["id"]), error=str(data["error"]), fault=Faults(data["fault"])
         )
 
 

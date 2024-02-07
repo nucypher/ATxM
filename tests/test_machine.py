@@ -83,10 +83,9 @@ def test_broadcast(machine, clock, eip1559_transaction, account, mocker):
     # The transaction is no longer queued
     assert len(machine.queued) == 0
 
-    assert machine.pending is atx
+    assert machine.pending == atx
     assert isinstance(machine.pending, PendingTx)
 
-    assert atx is machine.pending
     assert isinstance(atx, PendingTx)
     assert not atx.final
     assert atx.txhash
@@ -116,7 +115,7 @@ def test_finalize(
     while machine.pending is None:
         yield clock.advance(1)
     machine.stop()
-    assert machine.pending is atx
+    assert machine.pending == atx
 
     # advance time to finalize the transaction
     machine.start(now=True)
@@ -147,14 +146,14 @@ def test_follow(chain, machine, clock, eip1559_transaction, account, mock_wake_s
         signer=account,
     )
 
-    machine.start(now=True)
+    machine.start()
 
     while not machine.finalized:
         yield clock.advance(1)
 
     assert atx.final is True
 
-    while machine.finalized:
+    while len(machine.finalized) > 0:
         yield clock.advance(1)
         yield chain.mine(1)
 
@@ -162,7 +161,11 @@ def test_follow(chain, machine, clock, eip1559_transaction, account, mock_wake_s
 
     assert len(machine.finalized) == 0
     assert len(machine.queued) == 0
+    assert len(machine.faults) == 0
     assert machine.pending is None
 
     assert not machine.busy
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
     assert sleep.call_count == 1

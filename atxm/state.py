@@ -1,24 +1,25 @@
 import json
 import time
 from collections import deque
+from copy import deepcopy, copy
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, Deque, Dict, Optional, Set
+from typing import Callable, Deque, Dict, Optional, Set, Tuple
 
 from eth_typing import ChecksumAddress
 from web3.types import TxParams, TxReceipt
 
+from atxm.exceptions import Faults
+from atxm.logging import log
 from atxm.tx import (
     FinalizedTx,
     FutureTx,
     PendingTx,
     TxHash,
     AsyncTx,
-    Fault,
     FaultyTx,
 )
 from atxm.utils import fire_hook
-from atxm.logging import log
 
 
 class _State:
@@ -118,7 +119,7 @@ class _State:
 
     def fault(
         self,
-        fault: Fault,
+        fault: Faults,
         clear_active: bool,
         error: Optional[str] = None,
     ) -> None:
@@ -164,25 +165,25 @@ class _State:
         self.commit()
         log.debug(
             f"[state] cleared 1 pending transaction \n"
-            f"[state] {len(self.waiting)} queued "
-            f"transaction{'s' if len(self.waiting) != 1 else ''} remaining"
+            f"[state] {len(self.queue)} queued "
+            f"transaction{'s' if len(self.queue) != 1 else ''} remaining"
         )
 
     @property
-    def active(self) -> Optional[PendingTx]:
+    def pending(self) -> Optional[PendingTx]:
         """Return the active pending transaction if there is one."""
-        return self.__active
+        return copy(self.__active)
 
     @property
-    def waiting(self) -> Deque[FutureTx]:
+    def queue(self) -> Tuple[FutureTx, ...]:
         """Return the queue of transactions."""
-        return self.__queue
+        return tuple(self.__queue)
 
-    def pop(self) -> FutureTx:
+    def _pop(self) -> FutureTx:
         """Pop the next transaction from the queue."""
         return self.__queue.popleft()
 
-    def requeue(self, tx: FutureTx) -> None:
+    def _requeue(self, tx: FutureTx) -> None:
         """Re-queue a transaction for broadcast and subsequent tracking."""
         self.__queue.append(tx)
         self.commit()
@@ -191,14 +192,14 @@ class _State:
             f"priority {len(self.__queue)}"
         )
 
-    def queue(
+    def _queue(
         self,
         params: TxParams,
         _from: ChecksumAddress,
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable] = None,
         on_finalized: Optional[Callable] = None,
-        on_halt: Optional[Callable] = None,
+        on_pause: Optional[Callable] = None,
         on_fault: Optional[Callable] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
@@ -212,7 +213,7 @@ class _State:
         # configure hooks
         tx.on_broadcast = on_broadcast
         tx.on_finalized = on_finalized
-        tx.on_halt = on_halt
+        tx.on_pause = on_pause
         tx.on_fault = on_fault
 
         self.__queue.append(tx)
