@@ -8,9 +8,12 @@ web3 = "*"
 twisted = "*"
 
 [dev-packages]
+# testing
+eth-ape = "*"
 pytest = "*"
 pytest-mock = "*"
 pytest-twisted = "*"
+# quality control
 pre-commit = "*"
 black = "*"
 ruff = "*"
