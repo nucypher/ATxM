@@ -1,6 +1,8 @@
 Automatic Tx Machine 🏧
 ========================
 
+[![Tests](https://github.com/nucypher/ATxM/actions/workflows/pytest.yml/badge.svg)](https://github.com/nucypher/ATxM/actions/workflows/pytest.yml)
+
 An async EVM transaction retry machine.
 Programmatically queue, broadcast, and retrying (speedup) transactions.
 Transactions are queued and broadcasted in a first-in-first-out (FIFO) order.
@@ -36,7 +38,7 @@ Hooks are fired in a dedicated thread for lifecycle events.
 
 - on_broadcast: When a transaction is broadcasted.
 - on_finalized: When a transaction is finalized.
-- on_halted: When a transaction is halted by the strategy.
+- on_pause: When a transaction is halted by the strategy.
 - on_fault: When a transaction reverted or another error occurred.
 
 ##### Event Loop Support
