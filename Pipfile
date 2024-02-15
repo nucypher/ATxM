@@ -6,16 +6,17 @@ name = "pypi"
 [packages]
 web3 = "*"
 twisted = "*"
-eth-account = "<0.11,>=0.10.0"
+eth-account = "<0.9"
 eth-typing = "<4,>=3.5.2"
 eth-utils = "<3,>=2.3.1"
 eth-abi = "<5,>=4.2.1"
 eth-keys = "<0.5,>=0.4.0"
 rlp = "<4,>=3.0.0"
+urllib3 = "<2,>=1.26.16"
 
 [dev-packages]
 # testing
-eth-ape = "*"
+eth-ape = "<7"
 pytest = "*"
 pytest-mock = "*"
 pytest-twisted = "*"
