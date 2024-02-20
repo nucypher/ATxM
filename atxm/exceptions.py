@@ -26,10 +26,6 @@ class Faults(Enum):
     INSUFFICIENT_FUNDS = "insufficient_funds"
 
 
-class TransactionFinalized(Exception):
-    """raised when a transaction has been included in a block"""
-
-
 class InsufficientFunds(RPCError):
     """raised when a transaction exceeds the spending cap"""
 
