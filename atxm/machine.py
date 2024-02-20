@@ -383,22 +383,24 @@ class _Machine:
             return
 
         receipt = _get_receipt(w3=self.w3, data=txdata)
+        if not receipt:
+            return
+
         status = receipt.get("status")
         if status == 0:
             # If status in response equals 1 the transaction was successful.
             # If it is equals 0 the transaction was reverted by EVM.
             # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
-            log.info(
+            log.warning(
                 f"Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
             )
             raise TransactionReverted(receipt)
 
-        if receipt:
-            log.info(
-                f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "
-                f"has been included in block #{txdata['blockNumber']}"
-            )
-            return receipt
+        log.info(
+            f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "
+            f"has been included in block #{txdata['blockNumber']}"
+        )
+        return receipt
 
     def __get_confirmations(self, tx: Union[PendingTx, FinalizedTx]) -> int:
         current_block = self.w3.eth.block_number
