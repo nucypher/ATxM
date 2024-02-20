@@ -222,9 +222,7 @@ class _Machine:
 
         # Outcome 1: the pending transaction is paused by strategies
         if self.__pause:
-            self.log.warn(
-                f"[pause] transaction #{pending_tx.id} paused by strategies"
-            )
+            self.log.warn(f"[pause] transaction #{pending_tx.id} paused by strategies")
             return False
 
         try:
@@ -378,12 +376,10 @@ class _Machine:
             txdata = self.w3.eth.get_transaction(pending_tx.txhash)
             pending_tx.data = txdata
         except TransactionNotFound:
-            self.log.error(
-                f"[error] Transaction {pending_tx.txhash.hex()} not found"
-            )
+            self.log.error(f"[error] Transaction {pending_tx.txhash.hex()} not found")
             return
 
-        receipt = _get_receipt(w3=self.w3, txhash=txdata['hash'])
+        receipt = _get_receipt(w3=self.w3, txhash=txdata["hash"])
         if not receipt:
             return
 

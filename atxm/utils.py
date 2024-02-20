@@ -1,11 +1,11 @@
 import contextlib
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from cytoolz import memoize
 from twisted.internet import reactor
 from web3 import Web3
 from web3.exceptions import TransactionNotFound
-from web3.types import PendingTx as PendingTxData, TxData, TxParams
+from web3.types import TxData, TxParams
 from web3.types import RPCError, TxReceipt, Wei
 
 from atxm.exceptions import (
