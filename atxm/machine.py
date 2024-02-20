@@ -219,6 +219,8 @@ class _Machine:
         Returns True if the next queued transaction can be broadcasted right now.
         """
 
+        pending_tx = self._state.pending
+
         # Outcome 1: the pending transaction is paused by strategies
         if self.__pause:
             self.log.warning(
@@ -227,7 +229,7 @@ class _Machine:
             return False
 
         try:
-            receipt = self.__get_receipt()
+            receipt = self.__get_receipt(pending_tx)
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted:
@@ -241,10 +243,10 @@ class _Machine:
         # Outcome 3: pending transaction is finalized (final success)
         if receipt:
             final_txhash = receipt["transactionHash"]
-            confirmations = self.__get_confirmations(tx=self._state.pending)
+            confirmations = self.__get_confirmations(tx=pending_tx)
             self.log.info(
-                f"[finalized] Transaction #atx-{self._state.pending.id} has been finalized "
-                f"with {confirmations} confirmations txhash: {final_txhash.hex()}"
+                f"[finalized] Transaction #atx-{pending_tx.id} has been finalized "
+                f"with {confirmations} confirmation(s) txhash: {final_txhash.hex()}"
             )
             self._state.finalize_active_tx(receipt=receipt)
             return True
@@ -364,7 +366,7 @@ class _Machine:
     # Monitoring
     #
 
-    def __get_receipt(self) -> Optional[TxReceipt]:
+    def __get_receipt(self, pending_tx: PendingTx) -> Optional[TxReceipt]:
         """
         Hits eth_getTransaction and eth_getTransactionReceipt
         for the active pending txhash and checks if
@@ -374,11 +376,11 @@ class _Machine:
         NOTE: Performs state changes
         """
         try:
-            txdata = self.w3.eth.get_transaction(self._state.pending.txhash)
-            self._state.pending.data = txdata
+            txdata = self.w3.eth.get_transaction(pending_tx.txhash)
+            pending_tx.data = txdata
         except TransactionNotFound:
             self.log.error(
-                f"[error] Transaction {self._state.pending.txhash.hex()} not found"
+                f"[error] Transaction {pending_tx.txhash.hex()} not found"
             )
             return
 
