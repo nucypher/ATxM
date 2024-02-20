@@ -115,6 +115,10 @@ class FinalizedTx(AsyncTx):
         receipt = _deserialize_tx_receipt(data["receipt"])
         return cls(id=int(data["id"]), receipt=receipt)
 
+    @property
+    def txhash(self) -> TxHash:
+        return self.receipt["transactionHash"]
+
 
 @dataclass
 class FaultyTx(AsyncTx):

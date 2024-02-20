@@ -383,7 +383,7 @@ class _Machine:
             )
             return
 
-        receipt = _get_receipt(w3=self.w3, data=txdata)
+        receipt = _get_receipt(w3=self.w3, txhash=txdata['hash'])
         if not receipt:
             return
 
@@ -405,17 +405,14 @@ class _Machine:
 
     def __get_confirmations(self, tx: Union[PendingTx, FinalizedTx]) -> int:
         current_block = self.w3.eth.block_number
-        txhash = (
-            tx.txhash if isinstance(tx, PendingTx) else tx.receipt["transactionHash"]
-        )
-        try:
-            tx_receipt = self.w3.eth.get_transaction_receipt(txhash)
-            tx_block = tx_receipt["blockNumber"]
-            confirmations = current_block - tx_block
-            return confirmations
-        except TransactionNotFound:
-            self.log.info(f"Transaction {txhash.hex()} is pending or unconfirmed")
+        tx_receipt = _get_receipt(w3=self.w3, txhash=tx.txhash)
+        if not tx_receipt:
+            self.log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
             return 0
+
+        tx_block = tx_receipt["blockNumber"]
+        confirmations = current_block - tx_block
+        return confirmations
 
     def __monitor_finalized(self) -> None:
         """Follow-up on finalized transactions for a little while."""
@@ -423,14 +420,13 @@ class _Machine:
             return
         for tx in self._state.finalized.copy():
             confirmations = self.__get_confirmations(tx=tx)
-            txhash = tx.receipt["transactionHash"]
             if confirmations >= self._TRACKING_CONFIRMATIONS:
                 if tx in self._state.finalized:
                     self._state.finalized.remove(tx)
                     self.log.info(
-                        f"[clear] stopped tracking {txhash.hex()} after {confirmations} confirmations"
+                        f"[clear] stopped tracking {tx.txhash.hex()} after {confirmations} confirmations"
                     )
                 continue
             self.log.info(
-                f"[monitor] transaction {txhash.hex()} has {confirmations} confirmations"
+                f"[monitor] transaction {tx.txhash.hex()} has {confirmations} confirmations"
             )

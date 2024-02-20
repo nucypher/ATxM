@@ -12,7 +12,7 @@ from atxm.exceptions import (
     InsufficientFunds,
 )
 from atxm.logging import log
-from atxm.tx import AsyncTx, FutureTx
+from atxm.tx import AsyncTx, FutureTx, TxHash
 
 
 @memoize
@@ -36,9 +36,9 @@ def _log_gas_weather(base_fee: Wei, tip: Wei) -> None:
     log.info(f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei")
 
 
-def _get_receipt(w3: Web3, data: Union[TxData, PendingTxData]) -> Optional[TxReceipt]:
+def _get_receipt(w3: Web3, txhash: TxHash) -> Optional[TxReceipt]:
     try:
-        receipt = w3.eth.get_transaction_receipt(data["hash"])
+        receipt = w3.eth.get_transaction_receipt(txhash)
     except TransactionNotFound:
         return
     return receipt
