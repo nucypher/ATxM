@@ -13,8 +13,8 @@ from web3.types import TxReceipt, TxParams
 from atxm.exceptions import (
     Wait,
     TransactionReverted,
+    TransactionFault,
     Fault,
-    Faults,
 )
 from atxm.state import _State
 from atxm.strategies import (
@@ -232,8 +232,8 @@ class _Machine:
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted:
             self._state.fault(
-                error=self._state.pending.txhash.hex(),
-                fault=Faults.REVERT,
+                error=pending_tx.txhash.hex(),
+                fault=Fault.REVERT,
                 clear_active=True,
             )
             return True
@@ -316,7 +316,7 @@ class _Machine:
             except Wait:
                 self.pause()
                 return
-            except Fault as e:
+            except TransactionFault as e:
                 self._state.fault(
                     error=self._state.pending.txhash.hex(),
                     fault=e.fault,

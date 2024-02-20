@@ -7,7 +7,7 @@ from eth_utils import encode_hex
 from hexbytes import HexBytes
 from web3.types import TxData, TxParams, TxReceipt
 
-from atxm.exceptions import Faults
+from atxm.exceptions import Fault
 
 TxHash = HexBytes
 
@@ -16,7 +16,7 @@ TxHash = HexBytes
 class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
-    fault: Optional[Faults] = field(default=None, init=False)
+    fault: Optional[Fault] = field(default=None, init=False)
     on_broadcast: Optional[Callable] = field(default=None, init=False)
     on_finalized: Optional[Callable] = field(default=None, init=False)
     on_pause: Optional[Callable] = field(default=None, init=False)
@@ -119,7 +119,7 @@ class FinalizedTx(AsyncTx):
 @dataclass
 class FaultyTx(AsyncTx):
     final: bool = field(default=False, init=False)
-    fault: Faults
+    fault: Fault
     error: Optional[str] = None
 
     def __hash__(self) -> int:
@@ -131,7 +131,7 @@ class FaultyTx(AsyncTx):
     @classmethod
     def from_dict(cls, data: Dict):
         return cls(
-            id=int(data["id"]), error=str(data["error"]), fault=Faults(data["fault"])
+            id=int(data["id"]), error=str(data["error"]), fault=Fault(data["fault"])
         )
 
 

@@ -3,7 +3,7 @@ from enum import Enum
 from web3.types import RPCError
 
 
-class Faults(Enum):
+class Fault(Enum):
     """
     Fault codes for transaction processing.
     These are alternate states that a transaction can enter
@@ -37,10 +37,10 @@ class Wait(Exception):
     """
 
 
-class Fault(Exception):
+class TransactionFault(Exception):
     """raised when a transaction has been faulted"""
 
-    def __init__(self, tx, fault: Faults, clear: bool, message: str):
+    def __init__(self, tx, fault: Fault, clear: bool, message: str):
         self.tx = tx
         self.fault = fault
         self.message = message
