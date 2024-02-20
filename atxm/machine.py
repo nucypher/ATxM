@@ -1,5 +1,4 @@
 from copy import deepcopy
-from logging import Logger
 from typing import Optional, Union, List, Type
 
 from eth_account.signers.local import LocalAccount
@@ -72,7 +71,7 @@ class _Machine:
         # public
         self.w3 = w3
         self.signers = {}
-        self.log = Logger(self.__class__.__name__)
+        self.log = log
         self.strategies = [s(w3) for s in self.STRATEGIES]
         if strategies:
             self.strategies.extend(list(strategies))
@@ -110,19 +109,19 @@ class _Machine:
     def _handle_errors(self, *args, **kwargs):
         """Handles unexpected errors during task processing."""
         self._state.commit()
-        self.log.warning(
+        self.log.warn(
             "[recovery] error during transaction: {}".format(args[0].getTraceback())
         )
         if self._task.running:
             return
-        self.log.warning("[recovery] restarting transaction machine!")
+        self.log.warn("[recovery] restarting transaction machine!")
         self._start(now=False)
 
     def _cycle(self) -> None:
         """Execute one cycle"""
 
         if self.__pause:
-            self.log.warning("[pause] paused")
+            self.log.warn("[pause] paused")
             return
 
         self.__monitor_finalized()
@@ -223,7 +222,7 @@ class _Machine:
 
         # Outcome 1: the pending transaction is paused by strategies
         if self.__pause:
-            self.log.warning(
+            self.log.warn(
                 f"[pause] transaction #{pending_tx.id} paused by strategies"
             )
             return False
@@ -295,7 +294,7 @@ class _Machine:
 
     def pause(self) -> None:
         self.__pause = True
-        self.log.warning(
+        self.log.warn(
             f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused."
         )
         hook = self._state.pending.on_pause
@@ -393,7 +392,7 @@ class _Machine:
             # If status in response equals 1 the transaction was successful.
             # If it is equals 0 the transaction was reverted by EVM.
             # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
-            log.warning(
+            log.warn(
                 f"Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
             )
             raise TransactionReverted(receipt)
