@@ -110,19 +110,19 @@ class _Machine:
     def _handle_errors(self, *args, **kwargs):
         """Handles unexpected errors during task processing."""
         self._state.commit()
-        self.log.warn(
+        self.log.warning(
             "[recovery] error during transaction: {}".format(args[0].getTraceback())
         )
         if self._task.running:
             return
-        self.log.warn("[recovery] restarting transaction machine!")
+        self.log.warning("[recovery] restarting transaction machine!")
         self._start(now=False)
 
     def _cycle(self) -> None:
         """Execute one cycle"""
 
         if self.__pause:
-            self.log.warn("[pause] paused")
+            self.log.warning("[pause] paused")
             return
 
         self.__monitor_finalized()
@@ -221,8 +221,8 @@ class _Machine:
 
         # Outcome 1: the pending transaction is paused by strategies
         if self.__pause:
-            self.log.warn(
-                f"[pause] transaction #{self._state.pending.id} is paused by strategies"
+            self.log.warning(
+                f"[pause] transaction #{pending_tx.id} paused by strategies"
             )
             return False
 
@@ -293,7 +293,7 @@ class _Machine:
 
     def pause(self) -> None:
         self.__pause = True
-        self.log.warn(
+        self.log.warning(
             f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused."
         )
         hook = self._state.pending.on_pause
