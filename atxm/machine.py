@@ -287,7 +287,7 @@ class _Machine:
         )
         pending_tx = self._state.morph(tx=tx, txhash=txhash)
         if tx.on_broadcast:
-            fire_hook(hook=tx.on_broadcast, tx=tx)
+            fire_hook(hook=tx.on_broadcast, tx=pending_tx)
         return pending_tx
 
     def pause(self) -> None:

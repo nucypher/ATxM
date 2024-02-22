@@ -5,7 +5,7 @@ from typing import Callable, Dict, Optional
 from eth_typing import ChecksumAddress
 from eth_utils import encode_hex
 from hexbytes import HexBytes
-from web3.types import TxData, TxParams, TxReceipt
+from web3.types import PendingTx, TxData, TxParams, TxReceipt
 
 from atxm.exceptions import Fault
 
@@ -17,9 +17,13 @@ class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
     fault: Optional[Fault] = field(default=None, init=False)
-    on_broadcast: Optional[Callable] = field(default=None, init=False)
-    on_finalized: Optional[Callable] = field(default=None, init=False)
-    on_pause: Optional[Callable] = field(default=None, init=False)
+    on_broadcast: Optional[Callable[[PendingTx], None]] = field(
+        default=None, init=False
+    )
+    on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
+        default=None, init=False
+    )
+    on_pause: Optional[Callable[[PendingTx], None]] = field(default=None, init=False)
     on_fault: Optional[Callable] = field(default=None, init=False)
 
     def __repr__(self):
