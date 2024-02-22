@@ -22,7 +22,7 @@ from atxm.tx import (
 from atxm.utils import fire_hook
 
 
-class _State:
+class _TxTracker:
     """State management for transaction tracking."""
 
     _FILEPATH = ".txs.json"

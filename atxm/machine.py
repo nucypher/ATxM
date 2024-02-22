@@ -15,7 +15,7 @@ from atxm.exceptions import (
     TransactionFault,
     Fault,
 )
-from atxm.state import _State
+from atxm.tacker import _TxTracker
 from atxm.strategies import (
     AsyncTxStrategy,
     InsufficientFundsPause,
@@ -78,7 +78,9 @@ class _Machine:
 
         # state
         self.__pause = False
-        self._state = _State(disk_cache=disk_cache)
+
+        # tx tracking
+        self._tx_tracker = _TxTracker(disk_cache=disk_cache)
 
         # async
         self._task = LoopingCall(self._cycle)
@@ -100,7 +102,7 @@ class _Machine:
     @property
     def _busy(self) -> bool:
         """Returns True if the machine is busy."""
-        return bool(self._state.queue or self._state.pending)
+        return bool(self._tx_tracker.queue or self._tx_tracker.pending)
 
     #
     # Async
@@ -108,7 +110,7 @@ class _Machine:
 
     def _handle_errors(self, *args, **kwargs):
         """Handles unexpected errors during task processing."""
-        self._state.commit()
+        self._tx_tracker.commit()
         self.log.warn(
             "[recovery] error during transaction: {}".format(args[0].getTraceback())
         )
@@ -133,16 +135,16 @@ class _Machine:
         # every work cycle.
         self.__work_mode()
         self.log.info(
-            f"[working] tracking {len(self._state.queue)} queued "
-            f"transaction{'s' if len(self._state.queue) > 1 else ''} "
-            f"{'and 1 pending transaction' if self._state.pending else ''}"
+            f"[working] tracking {len(self._tx_tracker.queue)} queued "
+            f"transaction{'s' if len(self._tx_tracker.queue) > 1 else ''} "
+            f"{'and 1 pending transaction' if self._tx_tracker.pending else ''}"
         )
 
-        if self._state.pending:
+        if self._tx_tracker.pending:
             # There is an active transaction
             self.__handle_active_transaction()
 
-        elif self._state.queue:
+        elif self._tx_tracker.queue:
             # There is no active transaction
             # and there are queued transactions
             self.__broadcast()
@@ -218,7 +220,7 @@ class _Machine:
         Returns True if the next queued transaction can be broadcasted right now.
         """
 
-        pending_tx = self._state.pending
+        pending_tx = self._tx_tracker.pending
 
         # Outcome 1: the pending transaction is paused by strategies
         if self.__pause:
@@ -230,7 +232,7 @@ class _Machine:
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted:
-            self._state.fault(
+            self._tx_tracker.fault(
                 error=pending_tx.txhash.hex(),
                 fault=Fault.REVERT,
                 clear_active=True,
@@ -245,7 +247,7 @@ class _Machine:
                 f"[finalized] Transaction #atx-{pending_tx.id} has been finalized "
                 f"with {confirmations} confirmation(s) txhash: {final_txhash.hex()}"
             )
-            self._state.finalize_active_tx(receipt=receipt)
+            self._tx_tracker.finalize_active_tx(receipt=receipt)
             return True
 
         # Outcome 4: re-strategize the pending transaction
@@ -285,7 +287,7 @@ class _Machine:
         self.log.info(
             f"[{msg}] fired transaction #atx-{tx.id}|{tx.params['nonce']}|{txhash.hex()}"
         )
-        pending_tx = self._state.morph(tx=tx, txhash=txhash)
+        pending_tx = self._tx_tracker.morph(tx=tx, txhash=txhash)
         if tx.on_broadcast:
             fire_hook(hook=tx.on_broadcast, tx=pending_tx)
         return pending_tx
@@ -293,11 +295,11 @@ class _Machine:
     def pause(self) -> None:
         self.__pause = True
         self.log.warn(
-            f"[pause] pending transaction {self._state.pending.txhash.hex()} has been paused."
+            f"[pause] pending transaction {self._tx_tracker.pending.txhash.hex()} has been paused."
         )
-        hook = self._state.pending.on_pause
+        hook = self._tx_tracker.pending.on_pause
         if hook:
-            fire_hook(hook=hook, tx=self._state.pending)
+            fire_hook(hook=hook, tx=self._tx_tracker.pending)
 
     def resume(self) -> None:
         self.log.info("[pause] pause lifted by strategy")
@@ -305,10 +307,10 @@ class _Machine:
 
     def __strategize(self) -> Optional[PendingTx]:
         """Retry the currently tracked pending transaction with the configured strategy."""
-        if not self._state.pending:
+        if not self._tx_tracker.pending:
             raise RuntimeError("No active transaction to strategize")
 
-        _active_copy = deepcopy(self._state.pending)
+        _active_copy = deepcopy(self._tx_tracker.pending)
         for strategy in self.strategies:
             try:
                 params = strategy.execute(pending=_active_copy)
@@ -316,8 +318,8 @@ class _Machine:
                 self.pause()
                 return
             except TransactionFault as e:
-                self._state.fault(
-                    error=self._state.pending.txhash.hex(),
+                self._tx_tracker.fault(
+                    error=self._tx_tracker.pending.txhash.hex(),
                     fault=e.fault,
                     clear_active=e.clear,
                 )
@@ -343,7 +345,7 @@ class _Machine:
         Attempts to broadcast the next `FutureTx` in the queue.
         If the broadcast is not successful, it is re-queued.
         """
-        future_tx = self._state._pop()  # popleft
+        future_tx = self._tx_tracker._pop()  # popleft
         future_tx.params = _make_tx_params(future_tx.params)
         signer = self.__get_signer(future_tx._from)
         nonce = self.w3.eth.get_transaction_count(signer.address, "latest")
@@ -355,7 +357,7 @@ class _Machine:
         future_tx.params["nonce"] = nonce
         pending_tx = self.__fire(tx=future_tx, msg="broadcast")
         if not pending_tx:
-            self._state._requeue(future_tx)
+            self._tx_tracker._requeue(future_tx)
             return
         return pending_tx.txhash
 
@@ -412,13 +414,13 @@ class _Machine:
 
     def __monitor_finalized(self) -> None:
         """Follow-up on finalized transactions for a little while."""
-        if not self._state.finalized:
+        if not self._tx_tracker.finalized:
             return
-        for tx in self._state.finalized.copy():
+        for tx in self._tx_tracker.finalized.copy():
             confirmations = self.__get_confirmations(tx=tx)
             if confirmations >= self._TRACKING_CONFIRMATIONS:
-                if tx in self._state.finalized:
-                    self._state.finalized.remove(tx)
+                if tx in self._tx_tracker.finalized:
+                    self._tx_tracker.finalized.remove(tx)
                     self.log.info(
                         f"[clear] stopped tracking {tx.txhash.hex()} after {confirmations} confirmations"
                     )

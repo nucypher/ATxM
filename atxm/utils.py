@@ -56,7 +56,7 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
             try:
                 hook(tx, *args, **kwargs)
             except Exception as e:
-                log.warn(f"[hook] {e}")
+                log.warn(f"[hook] raised {e}")
 
         reactor.callInThread(_hook)
         log.info(f"[hook] fired hook {hook} for transaction #atx-{tx.id}")
@@ -101,9 +101,11 @@ def _make_tx_params(data: TxData) -> TxParams:
         }
     )
     if "gasPrice" in data:
+        # legacy
         params["type"] = "0x01"
         params["gasPrice"] = data["gasPrice"]
     elif "maxFeePerGas" in data:
+        # EIP-1559
         params["type"] = "0x02"
         params["maxFeePerGas"] = data["maxFeePerGas"]
         params["maxPriorityFeePerGas"] = data["maxPriorityFeePerGas"]
