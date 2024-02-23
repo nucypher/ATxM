@@ -67,9 +67,8 @@ class _Machine(StateMachine):
         _idling
         | _pausing
         | _busying
-        |
         # self transitions
-        _BUSY.to.itself(cond="_busy", unless="_pause")
+        | _BUSY.to.itself(cond="_busy", unless="_pause")
         | _IDLE.to.itself(unless="_busy")
         | _PAUSED.to.itself(cond="_pause")
     )
@@ -117,18 +116,6 @@ class _Machine(StateMachine):
         self._task.interval = self._IDLE_INTERVAL
 
         super().__init__()
-
-    @property
-    def _clock(self):
-        return self.__CLOCK
-
-    @property
-    def _interval(self) -> Optional[float]:
-        return self._task.interval
-
-    @property
-    def _start_time(self) -> float:
-        return self._task.starttime
 
     @property
     def _busy(self) -> bool:
@@ -219,7 +206,7 @@ class _Machine(StateMachine):
             return self._task.deferred
         when = "now" if now else f"in {self._task.interval} seconds"
         self.log.info(f"[atxm] starting async transaction machine {when}")
-        d = self._task.start(interval=self._interval, now=now)
+        d = self._task.start(interval=self._task.interval, now=now)
         d.addErrback(self._handle_errors)
         return d
 
