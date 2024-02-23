@@ -332,7 +332,8 @@ class _Machine(StateMachine):
         for strategy in self.strategies:
             try:
                 params = strategy.execute(pending=_active_copy)
-            except Wait:
+            except Wait as e:
+                log.info(f"[pause] strategy {strategy.__class__} signalled pause: {e}")
                 self.pause()
                 return
             except TransactionFault as e:
