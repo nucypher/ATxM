@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Optional, Union, List, Type
+from typing import Optional, List, Type
 
 from eth_account.signers.local import LocalAccount
 from statemachine import StateMachine, State
@@ -7,8 +7,7 @@ from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
 from web3 import Web3
-from web3.exceptions import TransactionNotFound
-from web3.types import TxReceipt, TxParams
+from web3.types import TxParams
 
 from atxm.exceptions import (
     Wait,
@@ -24,13 +23,13 @@ from atxm.strategies import (
     FixedRateSpeedUp,
 )
 from atxm.tx import (
-    FinalizedTx,
     FutureTx,
     PendingTx,
     TxHash,
 )
 from atxm.utils import (
     _get_average_blocktime,
+    _get_confirmations,
     _get_receipt,
     _handle_rpc_error,
     fire_hook,
@@ -260,7 +259,7 @@ class _Machine(StateMachine):
         pending_tx = self._tx_tracker.pending
 
         try:
-            receipt = self.__get_receipt(pending_tx)
+            receipt = _get_receipt(w3=self.w3, pending_tx=pending_tx)
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted:
@@ -274,7 +273,7 @@ class _Machine(StateMachine):
         # Outcome 3: pending transaction is finalized (final success)
         if receipt:
             final_txhash = receipt["transactionHash"]
-            confirmations = self.__get_confirmations(tx=pending_tx)
+            confirmations = _get_confirmations(w3=self.w3, tx=pending_tx)
             self.log.info(
                 f"[finalized] Transaction #atx-{pending_tx.id} has been finalized "
                 f"with {confirmations} confirmation(s) txhash: {final_txhash.hex()}"
@@ -396,60 +395,12 @@ class _Machine(StateMachine):
     #
     # Monitoring
     #
-
-    def __get_receipt(self, pending_tx: PendingTx) -> Optional[TxReceipt]:
-        """
-        Hits eth_getTransaction and eth_getTransactionReceipt
-        for the active pending txhash and checks if
-        it has been finalized or reverted.
-
-        Returns the receipt if the transaction has been finalized.
-        NOTE: Performs state changes
-        """
-        try:
-            txdata = self.w3.eth.get_transaction(pending_tx.txhash)
-            pending_tx.data = txdata
-        except TransactionNotFound:
-            self.log.error(f"[error] Transaction {pending_tx.txhash.hex()} not found")
-            return
-
-        receipt = _get_receipt(w3=self.w3, txhash=txdata["hash"])
-        if not receipt:
-            return
-
-        status = receipt.get("status")
-        if status == 0:
-            # If status in response equals 1 the transaction was successful.
-            # If it is equals 0 the transaction was reverted by EVM.
-            # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
-            log.warn(
-                f"Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
-            )
-            raise TransactionReverted(receipt)
-
-        log.info(
-            f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "
-            f"has been included in block #{txdata['blockNumber']}"
-        )
-        return receipt
-
-    def __get_confirmations(self, tx: Union[PendingTx, FinalizedTx]) -> int:
-        current_block = self.w3.eth.block_number
-        tx_receipt = _get_receipt(w3=self.w3, txhash=tx.txhash)
-        if not tx_receipt:
-            self.log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
-            return 0
-
-        tx_block = tx_receipt["blockNumber"]
-        confirmations = current_block - tx_block
-        return confirmations
-
     def __monitor_finalized(self) -> None:
         """Follow-up on finalized transactions for a little while."""
         if not self._tx_tracker.finalized:
             return
         for tx in self._tx_tracker.finalized.copy():
-            confirmations = self.__get_confirmations(tx=tx)
+            confirmations = _get_confirmations(w3=self.w3, tx=tx)
             if confirmations >= self._TRACKING_CONFIRMATIONS:
                 if tx in self._tx_tracker.finalized:
                     self._tx_tracker.finalized.remove(tx)
