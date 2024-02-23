@@ -1,9 +1,15 @@
+import sys
+
 import pytest
 from eth_account import Account
 from twisted.internet.task import Clock
+from twisted.logger import globalLogPublisher, textFileLogObserver
 
 from atxm import AutomaticTxMachine
 from atxm.logging import log
+
+observer = textFileLogObserver(sys.stdout)
+globalLogPublisher.addObserver(observer)
 
 log.debug("Running tests")
 
