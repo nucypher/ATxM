@@ -2,6 +2,7 @@ from copy import deepcopy
 from typing import Optional, Union, List, Type
 
 from eth_account.signers.local import LocalAccount
+from statemachine import StateMachine, State
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
@@ -38,12 +39,41 @@ from atxm.utils import (
 from .logging import log
 
 
-class _Machine:
+class _Machine(StateMachine):
     """
     Do not import this - it will not work.
     Please import the publicly exposed `AutomaticTxMachine` instead.
     Thanks! :)
     """
+
+    #
+    # State Machine:
+    #
+    #   Idle <---> Busy <---> Paused
+    #   | ^       | ^          | ^
+    #   V |       V |          V |
+    #    _         _            _
+    #
+    _BUSY = State("Busy")
+    _IDLE = State("Idle", initial=True)
+    _PAUSED = State("Paused")
+
+    # State Transitions
+    _idling = _BUSY.to(_IDLE, unless="_busy")  # Busy -> Idle
+    _pausing = _BUSY.to(_PAUSED, cond="_pause")  # Busy -> Pause
+    _busying = _IDLE.to(_BUSY, cond="_busy") | _PAUSED.to(
+        _BUSY, unless="_pause"
+    )  # Idle/Pause -> Busy
+    _cycle_state = (
+        _idling
+        | _pausing
+        | _busying
+        |
+        # self transitions
+        _BUSY.to.itself(cond="_busy", unless="_pause")
+        | _IDLE.to.itself(unless="_busy")
+        | _PAUSED.to.itself(cond="_pause")
+    )
 
     # internal
     __CLOCK = reactor  # twisted reactor
@@ -77,7 +107,7 @@ class _Machine:
             self.strategies.extend(list(strategies))
 
         # state
-        self.__pause = False
+        self._pause = False
 
         # tx tracking
         self._tx_tracker = _TxTracker(disk_cache=disk_cache)
@@ -86,6 +116,8 @@ class _Machine:
         self._task = LoopingCall(self._cycle)
         self._task.clock = self.__CLOCK
         self._task.interval = self._IDLE_INTERVAL
+
+        super().__init__()
 
     @property
     def _clock(self):
@@ -119,21 +151,45 @@ class _Machine:
         self.log.warn("[recovery] restarting transaction machine!")
         self._start(now=False)
 
-    def _cycle(self) -> None:
-        """Execute one cycle"""
+    # State Transitions
 
-        if self.__pause:
-            self.log.warn("[pause] paused")
-            return
+    @_PAUSED.enter
+    def _process_paused(self):
+        self.log.warn("[pause] paused")
 
-        self.__monitor_finalized()
-        if not self._busy:
-            self.log.info(f"[idle] cycle interval is {self._task.interval} seconds")
-            return
+        # TODO what action should be taken to check if we leave the pause state?
+        #
+        # Perhaps a call to self.__strategize()
+        return
 
-        # sample block time and adjust the interval
-        # every work cycle.
-        self.__work_mode()
+    @_IDLE.enter
+    def _process_idle(self):
+        """Return to idle mode if not already there (slow down)"""
+        if self._task.interval != self._IDLE_INTERVAL:
+            self._task.interval = self._IDLE_INTERVAL
+            self.log.info(
+                f"[done] returning to idle mode with "
+                f"{self._task.interval} second interval"
+            )
+
+            # TODO
+            #  1. don't always sleep (idle for some number of cycles?)
+            #  2. careful sleeping - potential concurrency concerns
+            self._sleep()
+
+    @_busying.before
+    def _enter_work_mode(self):
+        """About to enter busy work mode (speed up interval)"""
+        average_block_time = _get_average_blocktime(
+            w3=self.w3, sample_size=self._BLOCK_SAMPLE_SIZE
+        )
+        self._task.interval = max(
+            round(average_block_time * self._BLOCK_INTERVAL), self._MIN_INTERVAL
+        )
+        self.log.info(f"[working] cycle interval is {self._task.interval} seconds")
+
+    @_BUSY.enter
+    def _process_busy(self):
         self.log.info(
             f"[working] tracking {len(self._tx_tracker.queue)} queued "
             f"transaction{'s' if len(self._tx_tracker.queue) > 1 else ''} "
@@ -149,10 +205,11 @@ class _Machine:
             # and there are queued transactions
             self.__broadcast()
 
-        # After one work cycle, return to idle mode
-        # if the machine is not busy.
-        if not self._busy:
-            self.__idle_mode()
+    def _cycle(self) -> None:
+        """Execute one cycle"""
+        self.__monitor_finalized()
+
+        self._cycle_state()
 
     #
     # Throttle
@@ -171,26 +228,6 @@ class _Machine:
         """Stop task."""
         if self._task.running:
             self._task.stop()
-
-    def __idle_mode(self) -> None:
-        """Return to idle mode (slow down)"""
-        self._task.interval = self._IDLE_INTERVAL
-        self.log.info(
-            f"[done] returning to idle mode with "
-            f"{self._task.interval} second interval"
-        )
-        if not self._busy:
-            self._sleep()
-
-    def __work_mode(self) -> None:
-        """Start work mode (speed up)"""
-        average_block_time = _get_average_blocktime(
-            w3=self.w3, sample_size=self._BLOCK_SAMPLE_SIZE
-        )
-        self._task.interval = max(
-            round(average_block_time * self._BLOCK_INTERVAL), self._MIN_INTERVAL
-        )
-        self.log.info(f"[working] cycle interval is {self._task.interval} seconds")
 
     def _wake(self) -> None:
         if not self._task.running:
@@ -221,11 +258,6 @@ class _Machine:
         """
 
         pending_tx = self._tx_tracker.pending
-
-        # Outcome 1: the pending transaction is paused by strategies
-        if self.__pause:
-            self.log.warn(f"[pause] transaction #{pending_tx.id} paused by strategies")
-            return False
 
         try:
             receipt = self.__get_receipt(pending_tx)
@@ -293,7 +325,7 @@ class _Machine:
         return pending_tx
 
     def pause(self) -> None:
-        self.__pause = True
+        self._pause = True
         self.log.warn(
             f"[pause] pending transaction {self._tx_tracker.pending.txhash.hex()} has been paused."
         )
@@ -303,7 +335,7 @@ class _Machine:
 
     def resume(self) -> None:
         self.log.info("[pause] pause lifted by strategy")
-        self.__pause = False  # resume
+        self._pause = False  # resume
 
     def __strategize(self) -> Optional[PendingTx]:
         """Retry the currently tracked pending transaction with the configured strategy."""
@@ -329,7 +361,7 @@ class _Machine:
                 # keep the parameters as they are.
                 _active_copy.params.update(params)
 
-            if self.__pause:
+            if self._pause:
                 self.resume()
 
         # (!) retry the transaction with the new parameters

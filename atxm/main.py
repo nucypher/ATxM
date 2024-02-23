@@ -30,7 +30,7 @@ class AutomaticTxMachine(_Machine):
     @property
     def paused(self) -> bool:
         """Return True if the machine is paused."""
-        return bool(self.__pause)
+        return bool(self._pause)
 
     @property
     def busy(self) -> bool:
