@@ -138,20 +138,22 @@ class _Machine(StateMachine):
         self._start(now=False)
 
     # State Transitions
+    @_pausing.before
+    def _enter_pause_mode(self):
+        self.log.warn("[pause] pause activated")
+        return
 
     @_PAUSED.enter
     def _process_paused(self):
-        self.log.warn("[pause] paused")
-
         # TODO what action should be taken to check if we leave the pause state?
-        #
-        # Perhaps a call to self.__strategize()
+        #  Perhaps a call to self.__strategize()
         return
 
     @_IDLE.enter
     def _process_idle(self):
         """Return to idle mode if not already there (slow down)"""
         if self._task.interval != self._IDLE_INTERVAL:
+            # TODO does changing the interval value actually update the LoopingCall?
             self._task.interval = self._IDLE_INTERVAL
             self.log.info(
                 f"[done] returning to idle mode with "
@@ -161,6 +163,7 @@ class _Machine(StateMachine):
             # TODO
             #  1. don't always sleep (idle for some number of cycles?)
             #  2. careful sleeping - potential concurrency concerns
+            #  3. there is currently no difference between sleep/idle ...
             self._sleep()
 
     @_busying.before
