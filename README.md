@@ -7,6 +7,10 @@ An async EVM transaction retry machine.
 Programmatically queue, broadcast, and retrying (speedup) transactions.
 Transactions are queued and broadcasted in a first-in-first-out (FIFO) order.
 
+The machine is designed to be used in a long-running process, like a server.
+
+[![Diagram](./diagram.png)](./diagram.png)
+
 ### Installation
 
 ```bash
