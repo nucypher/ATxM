@@ -1,7 +1,9 @@
 import sys
+from typing import List, Tuple
 
 import pytest
 from eth_account import Account
+from statemachine import State
 from twisted.internet.task import Clock
 from twisted.logger import globalLogPublisher, textFileLogObserver
 
@@ -80,3 +82,20 @@ def mock_wake_sleep(machine, mocker):
     wake = mocker.patch.object(machine, "_wake")
     sleep = mocker.patch.object(machine, "_sleep")
     return wake, sleep
+
+
+class StateObserver:
+    def __init__(self):
+        self.transitions: List[Tuple[State, State]] = []
+
+    def on_transition(self, source, target):
+        if source.id != target.id:
+            self.transitions.append((source, target))
+
+
+@pytest.fixture
+def state_observer(machine):
+    _observer = StateObserver()
+    machine.add_observer(_observer)
+
+    return _observer
