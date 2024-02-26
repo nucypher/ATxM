@@ -57,20 +57,24 @@ class _Machine(StateMachine):
     _IDLE = State("Idle", initial=True)
     _PAUSED = State("Paused")
 
-    # State Transitions
-    _idling = _BUSY.to(_IDLE, unless="_busy")  # Busy -> Idle
-    _pausing = _BUSY.to(_PAUSED, cond="_pause")  # Busy -> Pause
-    _busying = _IDLE.to(_BUSY, cond="_busy") | _PAUSED.to(
+    # - State Transitions -
+    _transition_to_idle = _BUSY.to(_IDLE, unless="_busy")  # Busy -> Idle
+    _transition_to_paused = _BUSY.to(_PAUSED, cond="_pause")  # Busy -> Pause
+    _transition_to_busy = _IDLE.to(_BUSY, cond="_busy") | _PAUSED.to(
         _BUSY, unless="_pause"
     )  # Idle/Pause -> Busy
+    # self transitions i.e. remain in same state
+    _remain_busy = _BUSY.to.itself(cond="_busy", unless="_pause")
+    _remain_idle = _IDLE.to.itself(unless="_busy")
+    _remain_paused = _PAUSED.to.itself(cond="_pause")
+
     _cycle_state = (
-        _idling
-        | _pausing
-        | _busying
-        # self transitions
-        | _BUSY.to.itself(cond="_busy", unless="_pause")
-        | _IDLE.to.itself(unless="_busy")
-        | _PAUSED.to.itself(cond="_pause")
+        _transition_to_idle
+        | _transition_to_paused
+        | _transition_to_busy
+        | _remain_busy
+        | _remain_idle
+        | _remain_paused
     )
 
     # internal
@@ -138,7 +142,7 @@ class _Machine(StateMachine):
         self._start(now=False)
 
     # State Transitions
-    @_pausing.before
+    @_transition_to_paused.before
     def _enter_pause_mode(self):
         self.log.warn("[pause] pause activated")
         return
@@ -166,7 +170,7 @@ class _Machine(StateMachine):
             #  3. there is currently no difference between sleep/idle ...
             self._sleep()
 
-    @_busying.before
+    @_transition_to_busy.before
     def _enter_work_mode(self):
         """About to enter busy work mode (speed up interval)"""
         average_block_time = _get_average_blocktime(
