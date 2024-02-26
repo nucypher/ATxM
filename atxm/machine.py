@@ -49,9 +49,9 @@ class _Machine(StateMachine):
     # State Machine:
     #
     #   Idle <---> Busy <---> Paused
-    #   | ^       | ^          | ^
-    #   V |       V |          V |
-    #    _         _            _
+    #   | ^        | ^         | ^
+    #   V |        V |         V |
+    #    _          _           _
     #
     _BUSY = State("Busy")
     _IDLE = State("Idle", initial=True)
