@@ -183,7 +183,7 @@ class _Machine(StateMachine):
             self._sleep()
 
     @_transition_to_busy.before
-    def _enter_work_mode(self):
+    def _enter_busy_mode(self):
         """About to enter busy work mode (speed up interval)"""
         average_block_time = _get_average_blocktime(
             w3=self.w3, sample_size=self._BLOCK_SAMPLE_SIZE
