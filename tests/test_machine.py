@@ -222,3 +222,50 @@ def test_follow(
     assert len(state_observer.transitions) == 2
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
     assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+
+def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, account):
+    assert machine.current_state == machine._IDLE
+
+    for i in range(3):
+        machine._cycle()
+        # no change in state
+        assert machine.current_state == machine._IDLE
+
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+    )
+
+    # broadcast tx
+    machine._cycle()
+    assert machine.current_state == machine._BUSY
+    assert machine.busy
+
+    # pause
+    machine.pause()
+    machine._cycle()
+    assert machine.current_state == machine._PAUSED
+    assert machine._pause
+
+    for i in range(3):
+        machine._cycle()
+        # no change in state
+        assert machine.current_state == machine._PAUSED
+
+    # resume after pausing
+    machine.resume()
+    machine._cycle()
+    assert machine.current_state == machine._BUSY
+    assert not machine._pause
+
+    # finalize tx
+    while machine.busy:
+        chain.mine(1)
+        machine._cycle()
+
+    assert atx.final is True
+
+    # transition to idle
+    machine._cycle()
+    assert machine.current_state == machine._IDLE
