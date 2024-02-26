@@ -94,6 +94,16 @@ class _Machine(StateMachine):
         FixedRateSpeedUp,
     ]
 
+    class LogObserver:
+        """StateMachine observer for logging information about state/transitions."""
+
+        def __init__(self):
+            self.log = log
+
+        def on_transition(self, source, target):
+            if source.id != target.id:
+                self.log.debug(f"[transition] {source.name} --> {target.name}")
+
     def __init__(
         self,
         w3: Web3,
@@ -121,6 +131,8 @@ class _Machine(StateMachine):
 
         super().__init__()
 
+        self.add_observer(_Machine.LogObserver())
+
     @property
     def _busy(self) -> bool:
         """Returns True if the machine is busy."""
@@ -144,7 +156,7 @@ class _Machine(StateMachine):
     # State Transitions
     @_transition_to_paused.before
     def _enter_pause_mode(self):
-        self.log.warn("[pause] pause activated")
+        self.log.info("[pause] pause mode activated")
         return
 
     @_PAUSED.enter
@@ -192,7 +204,6 @@ class _Machine(StateMachine):
         if self._tx_tracker.pending:
             # There is an active transaction
             self.__handle_active_transaction()
-
         elif self._tx_tracker.queue:
             # There is no active transaction
             # and there are queued transactions
