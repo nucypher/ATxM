@@ -1,7 +1,9 @@
 import os
+import sys
 
 from eth_account import Account
 from twisted.internet import reactor
+from twisted.logger import globalLogPublisher, textFileLogObserver
 from web3 import Web3, HTTPProvider
 from web3.middleware import geth_poa_middleware
 
@@ -11,6 +13,9 @@ from atxm.tx import PendingTx, FinalizedTx
 #
 # Configuration
 #
+
+observer = textFileLogObserver(sys.stdout)
+globalLogPublisher.addObserver(observer)
 
 CHAIN_ID = 80001
 

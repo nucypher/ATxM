@@ -9,7 +9,7 @@ from typing import Callable, Deque, Dict, Optional, Set, Tuple
 from eth_typing import ChecksumAddress
 from web3.types import TxParams, TxReceipt
 
-from atxm.exceptions import Faults
+from atxm.exceptions import Fault
 from atxm.logging import log
 from atxm.tx import (
     FinalizedTx,
@@ -22,7 +22,7 @@ from atxm.tx import (
 from atxm.utils import fire_hook
 
 
-class _State:
+class _TxTracker:
     """State management for transaction tracking."""
 
     _FILEPATH = ".txs.json"
@@ -119,7 +119,7 @@ class _State:
 
     def fault(
         self,
-        fault: Faults,
+        fault: Fault,
         clear_active: bool,
         error: Optional[str] = None,
     ) -> None:

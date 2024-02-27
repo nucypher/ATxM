@@ -1,10 +1,3 @@
-import sys
-
-from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
+from twisted.logger import Logger
 
 log = Logger("AutomaticTxMachine")
-
-
-observer = textFileLogObserver(sys.stdout)
-
-globalLogPublisher.addObserver(observer)

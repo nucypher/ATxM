@@ -14,7 +14,8 @@ def rpc_spy(mocker, w3):
 
 
 @pytest_twisted.inlineCallbacks
-def test_no_rpc_calls_when_idle(machine, clock, rpc_spy):
+def test_no_rpc_calls_when_idle(machine, state_observer, clock, rpc_spy):
+    assert machine.current_state == machine._IDLE
     assert not machine.busy
     assert len(machine.queued) == 0
 
@@ -28,11 +29,23 @@ def test_no_rpc_calls_when_idle(machine, clock, rpc_spy):
     assert not machine.busy
     assert len(machine.queued) == 0
 
+    assert machine.current_state == machine._IDLE
+    assert len(state_observer.transitions) == 0  # remained idle
 
-def test_queue(machine, clock, rpc_spy, account, eip1559_transaction, mock_wake_sleep):
+
+def test_queue(
+    machine,
+    state_observer,
+    clock,
+    rpc_spy,
+    account,
+    eip1559_transaction,
+    mock_wake_sleep,
+):
     wake, sleep = mock_wake_sleep
 
     # The machine is idle
+    assert machine.current_state == machine._IDLE
     assert not machine.running
     assert not machine.busy
 
@@ -57,9 +70,15 @@ def test_queue(machine, clock, rpc_spy, account, eip1559_transaction, mock_wake_
     assert queued._from == account.address
     assert queued.id == 0
 
+    assert machine.current_state == machine._IDLE
+    assert len(state_observer.transitions) == 0  # nothing actually executed
+
 
 @pytest_twisted.inlineCallbacks
-def test_broadcast(machine, clock, eip1559_transaction, account, mocker):
+def test_broadcast(
+    machine, state_observer, clock, eip1559_transaction, account, mocker
+):
+    assert machine.current_state == machine._IDLE
     assert not machine.busy
 
     # Queue a transaction
@@ -94,11 +113,24 @@ def test_broadcast(machine, clock, eip1559_transaction, account, mocker):
     yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
+    # tx only broadcasted and not finalized, so we are still busy
+    assert machine.current_state == machine._BUSY
+    assert len(state_observer.transitions) == 1
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+
 
 @pytest_twisted.inlineCallbacks
 def test_finalize(
-    machine, clock, eip1559_transaction, account, mock_wake_sleep, mocker
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
+    mocker,
 ):
+    assert machine.current_state == machine._IDLE
+
     # Queue a transaction
     hook = mocker.Mock()
     atx = machine.queue_transaction(
@@ -121,10 +153,11 @@ def test_finalize(
     machine.start(now=True)
     while machine.pending:
         yield clock.advance(1)
-    machine.stop()
 
     # The transaction is no longer pending
     assert machine.pending is None
+
+    assert machine.current_state == machine._BUSY
 
     # The transaction is tracked as finalized
     assert len(machine.finalized) == 1
@@ -137,16 +170,30 @@ def test_finalize(
     yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
+    yield clock.advance(1)
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
 
 @pytest_twisted.inlineCallbacks
-def test_follow(chain, machine, clock, eip1559_transaction, account, mock_wake_sleep):
+def test_follow(
+    chain, machine, state_observer, clock, eip1559_transaction, account, mock_wake_sleep
+):
     wake, sleep = mock_wake_sleep
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
     )
-
-    machine.start()
 
     while not machine.finalized:
         yield clock.advance(1)
@@ -169,3 +216,56 @@ def test_follow(chain, machine, clock, eip1559_transaction, account, mock_wake_s
     # wait for the hook to be called
     yield deferLater(reactor, 0.2, lambda: None)
     assert sleep.call_count == 1
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+
+def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, account):
+    assert machine.current_state == machine._IDLE
+
+    for i in range(3):
+        machine._cycle()
+        # no change in state
+        assert machine.current_state == machine._IDLE
+
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+    )
+
+    # broadcast tx
+    machine._cycle()
+    assert machine.current_state == machine._BUSY
+    assert machine.busy
+
+    # pause
+    machine.pause()
+    machine._cycle()
+    assert machine.current_state == machine._PAUSED
+    assert machine._pause
+
+    for i in range(3):
+        machine._cycle()
+        # no change in state
+        assert machine.current_state == machine._PAUSED
+
+    # resume after pausing
+    machine.resume()
+    machine._cycle()
+    assert machine.current_state == machine._BUSY
+    assert not machine._pause
+
+    # finalize tx
+    while machine.busy:
+        chain.mine(1)
+        machine._cycle()
+
+    assert atx.final is True
+
+    # transition to idle
+    machine._cycle()
+    assert machine.current_state == machine._IDLE

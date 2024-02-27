@@ -5,9 +5,9 @@ from typing import Callable, Dict, Optional
 from eth_typing import ChecksumAddress
 from eth_utils import encode_hex
 from hexbytes import HexBytes
-from web3.types import TxData, TxParams, TxReceipt
+from web3.types import PendingTx, TxData, TxParams, TxReceipt
 
-from atxm.exceptions import Faults
+from atxm.exceptions import Fault
 
 TxHash = HexBytes
 
@@ -16,10 +16,14 @@ TxHash = HexBytes
 class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
-    fault: Optional[Faults] = field(default=None, init=False)
-    on_broadcast: Optional[Callable] = field(default=None, init=False)
-    on_finalized: Optional[Callable] = field(default=None, init=False)
-    on_pause: Optional[Callable] = field(default=None, init=False)
+    fault: Optional[Fault] = field(default=None, init=False)
+    on_broadcast: Optional[Callable[[PendingTx], None]] = field(
+        default=None, init=False
+    )
+    on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
+        default=None, init=False
+    )
+    on_pause: Optional[Callable[[PendingTx], None]] = field(default=None, init=False)
     on_fault: Optional[Callable] = field(default=None, init=False)
 
     def __repr__(self):
@@ -115,11 +119,15 @@ class FinalizedTx(AsyncTx):
         receipt = _deserialize_tx_receipt(data["receipt"])
         return cls(id=int(data["id"]), receipt=receipt)
 
+    @property
+    def txhash(self) -> TxHash:
+        return self.receipt["transactionHash"]
+
 
 @dataclass
 class FaultyTx(AsyncTx):
     final: bool = field(default=False, init=False)
-    fault: Faults
+    fault: Fault
     error: Optional[str] = None
 
     def __hash__(self) -> int:
@@ -131,7 +139,7 @@ class FaultyTx(AsyncTx):
     @classmethod
     def from_dict(cls, data: Dict):
         return cls(
-            id=int(data["id"]), error=str(data["error"]), fault=Faults(data["fault"])
+            id=int(data["id"]), error=str(data["error"]), fault=Fault(data["fault"])
         )
 
 

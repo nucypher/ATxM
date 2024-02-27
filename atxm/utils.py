@@ -1,19 +1,22 @@
 import contextlib
 from typing import Callable, Optional, Union
 
+from cytoolz import memoize
 from twisted.internet import reactor
 from web3 import Web3
 from web3.exceptions import TransactionNotFound
-from web3.types import PendingTx as PendingTxData, TxData, TxParams
+from web3.types import TxData, TxParams
 from web3.types import RPCError, TxReceipt, Wei
 
 from atxm.exceptions import (
     InsufficientFunds,
+    TransactionReverted,
 )
 from atxm.logging import log
-from atxm.tx import AsyncTx, FutureTx
+from atxm.tx import AsyncTx, FinalizedTx, FutureTx, PendingTx, TxHash
 
 
+@memoize
 def _get_average_blocktime(w3: Web3, sample_size: int) -> float:
     """Returns the average block time in seconds."""
     latest_block = w3.eth.get_block("latest")
@@ -34,12 +37,61 @@ def _log_gas_weather(base_fee: Wei, tip: Wei) -> None:
     log.info(f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei")
 
 
-def _get_receipt(w3: Web3, data: Union[TxData, PendingTxData]) -> Optional[TxReceipt]:
+def __get_receipt_from_txhash(w3: Web3, txhash: TxHash) -> Optional[TxReceipt]:
     try:
-        receipt = w3.eth.get_transaction_receipt(data["hash"])
+        receipt = w3.eth.get_transaction_receipt(txhash)
     except TransactionNotFound:
         return
     return receipt
+
+
+def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
+    """
+    Hits eth_getTransaction and eth_getTransactionReceipt
+    for the active pending txhash and checks if
+    it has been finalized or reverted.
+
+    Returns the receipt if the transaction has been finalized.
+    NOTE: Performs state changes
+    """
+    try:
+        txdata = w3.eth.get_transaction(pending_tx.txhash)
+        pending_tx.data = txdata
+    except TransactionNotFound:
+        log.error(f"[error] Transaction {pending_tx.txhash.hex()} not found")
+        return
+
+    receipt = __get_receipt_from_txhash(w3=w3, txhash=txdata["hash"])
+    if not receipt:
+        return
+
+    status = receipt.get("status")
+    if status == 0:
+        # If status in response equals 1 the transaction was successful.
+        # If it is equals 0 the transaction was reverted by EVM.
+        # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
+        log.warn(
+            f"Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
+        )
+        raise TransactionReverted(receipt)
+
+    log.info(
+        f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "
+        f"has been included in block #{txdata['blockNumber']}"
+    )
+    return receipt
+
+
+def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
+    current_block = w3.eth.block_number
+    tx_receipt = __get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
+    if not tx_receipt:
+        log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
+        return 0
+
+    tx_block = tx_receipt["blockNumber"]
+    confirmations = current_block - tx_block
+    return confirmations
 
 
 def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
@@ -54,7 +106,7 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
             try:
                 hook(tx, *args, **kwargs)
             except Exception as e:
-                log.warn(f"[hook] {e}")
+                log.warn(f"[hook] raised {e}")
 
         reactor.callInThread(_hook)
         log.info(f"[hook] fired hook {hook} for transaction #atx-{tx.id}")
@@ -99,9 +151,11 @@ def _make_tx_params(data: TxData) -> TxParams:
         }
     )
     if "gasPrice" in data:
+        # legacy
         params["type"] = "0x01"
         params["gasPrice"] = data["gasPrice"]
     elif "maxFeePerGas" in data:
+        # EIP-1559
         params["type"] = "0x02"
         params["maxFeePerGas"] = data["maxFeePerGas"]
         params["maxPriorityFeePerGas"] = data["maxPriorityFeePerGas"]
