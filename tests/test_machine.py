@@ -1,5 +1,8 @@
 import pytest
+
 import pytest_twisted
+from twisted.internet import reactor
+from twisted.internet.task import deferLater
 
 from atxm.tx import FutureTx, PendingTx
 
@@ -119,6 +122,7 @@ def test_broadcast(
     assert atx.txhash
 
     # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
     # tx only broadcasted and not finalized, so we are still busy
@@ -126,6 +130,8 @@ def test_broadcast(
 
     assert len(state_observer.transitions) == 1
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+
+    machine.stop()
 
 
 @pytest_twisted.inlineCallbacks
@@ -179,6 +185,8 @@ def test_finalize(
     assert atx.final
     assert atx.receipt
 
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
     yield clock.advance(1)
