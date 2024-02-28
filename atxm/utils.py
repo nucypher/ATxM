@@ -159,4 +159,7 @@ def _make_tx_params(data: TxData) -> TxParams:
         params["type"] = "0x02"
         params["maxFeePerGas"] = data["maxFeePerGas"]
         params["maxPriorityFeePerGas"] = data["maxPriorityFeePerGas"]
+    else:
+        raise ValueError(f"unrecognized tx data: {data}")
+
     return params
