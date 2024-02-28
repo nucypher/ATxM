@@ -199,7 +199,6 @@ class _TxTracker:
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable] = None,
         on_finalized: Optional[Callable] = None,
-        on_pause: Optional[Callable] = None,
         on_fault: Optional[Callable] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
@@ -213,7 +212,6 @@ class _TxTracker:
         # configure hooks
         tx.on_broadcast = on_broadcast
         tx.on_finalized = on_finalized
-        tx.on_pause = on_pause
         tx.on_fault = on_fault
 
         self.__queue.append(tx)

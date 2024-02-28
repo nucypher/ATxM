@@ -23,7 +23,6 @@ class AsyncTx(ABC):
     on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
         default=None, init=False
     )
-    on_pause: Optional[Callable[[PendingTx], None]] = field(default=None, init=False)
     on_fault: Optional[Callable] = field(default=None, init=False)
 
     def __repr__(self):

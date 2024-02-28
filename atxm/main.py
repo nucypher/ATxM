@@ -57,23 +57,6 @@ class AutomaticTxMachine(_Machine):
         """Return a set of faulted transactions."""
         return list(self._tx_tracker.faulty)
 
-    def queue_transaction(
-        self, params: TxParams, signer: LocalAccount, *args, **kwargs
-    ) -> FutureTx:
-        """
-        Queue a new transaction for broadcast and subsequent tracking.
-        Optionally provide a dictionary of additional string data
-        to log during the transaction's lifecycle for identification.
-        """
-        if signer.address not in self.signers:
-            self.signers[signer.address] = signer
-        tx = self._tx_tracker._queue(
-            _from=signer.address, params=params, *args, **kwargs
-        )
-        if not self._task.running:
-            self._wake()
-        return tx
-
     def queue_transactions(
         self, params: List[TxParams], signer: LocalAccount, *args, **kwargs
     ) -> List[FutureTx]:

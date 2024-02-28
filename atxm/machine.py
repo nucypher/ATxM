@@ -328,19 +328,6 @@ class _Machine(StateMachine):
             fire_hook(hook=tx.on_broadcast, tx=pending_tx)
         return pending_tx
 
-    def pause(self) -> None:
-        self._pause = True
-        self.log.warn(
-            f"[pause] pending transaction {self._tx_tracker.pending.txhash.hex()} has been paused."
-        )
-        hook = self._tx_tracker.pending.on_pause
-        if hook:
-            fire_hook(hook=hook, tx=self._tx_tracker.pending)
-
-    def resume(self) -> None:
-        self.log.info("[pause] pause lifted by strategy")
-        self._pause = False  # resume
-
     def __strategize(self) -> Optional[PendingTx]:
         """Retry the currently tracked pending transaction with the configured strategy."""
         if not self._tx_tracker.pending:
@@ -417,3 +404,41 @@ class _Machine(StateMachine):
             self.log.info(
                 f"[monitor] transaction {tx.txhash.hex()} has {confirmations} confirmations"
             )
+
+    #
+    # Exposed functions
+    #
+    def pause(self) -> None:
+        """
+        Pause the machine's tx processing loop; no txs are processed until unpaused (resume()).
+        """
+        self._pause = True
+        self.log.info("[pause] pause mode requested")
+
+    def resume(self) -> None:
+        """Unpauses (resumes) the machine's tx processing loop."""
+        if self._pause:
+            self._pause = False
+            self.log.info("[pause] pause mode deactivated")
+            self._wake()
+
+    def queue_transaction(
+        self, params: TxParams, signer: LocalAccount, *args, **kwargs
+    ) -> FutureTx:
+        """
+        Queue a new transaction for broadcast and subsequent tracking.
+        Optionally provide a dictionary of additional string data
+        to log during the transaction's lifecycle for identification.
+        """
+        previously_busy = self._busy
+
+        if signer.address not in self.signers:
+            self.signers[signer.address] = signer
+
+        tx = self._tx_tracker._queue(
+            _from=signer.address, params=params, *args, **kwargs
+        )
+        if not previously_busy:
+            self._wake()
+
+        return tx
