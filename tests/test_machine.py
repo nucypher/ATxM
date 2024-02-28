@@ -44,7 +44,7 @@ def test_queue(
     eip1559_transaction,
     mock_wake_sleep,
 ):
-    wake, sleep = mock_wake_sleep
+    wake, _ = mock_wake_sleep
 
     # The machine is idle
     assert machine.current_state == machine._IDLE
@@ -74,6 +74,127 @@ def test_queue(
 
     assert machine.current_state == machine._IDLE
     assert len(state_observer.transitions) == 0  # nothing actually executed
+
+
+def test_wake_after_queuing_when_idle_and_not_already_running(
+    machine,
+    eip1559_transaction,
+    account,
+    mocker,
+):
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    stop_spy = mocker.spy(machine._task, "stop")
+    start_spy = mocker.spy(machine._task, "start")
+
+    assert not machine.running
+
+    # Queue a transaction
+    _ = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert stop_spy.call_count == 0, "no task to stop"
+    assert start_spy.call_count == 1, "task started"
+
+    assert machine.running
+    assert machine.current_state == machine._BUSY
+
+    machine.stop()
+
+
+def test_wake_after_queuing_when_idle_and_already_running(
+    machine,
+    eip1559_transaction,
+    account,
+    mocker,
+):
+    machine.start(now=True)
+
+    stop_spy = mocker.spy(machine._task, "stop")
+    start_spy = mocker.spy(machine._task, "start")
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    assert machine.running
+
+    # Queue a transaction
+    _ = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert stop_spy.call_count == 1, "task stopped"
+    assert start_spy.call_count == 1, "task started"
+
+    assert machine.running
+    assert machine.current_state == machine._BUSY
+
+    machine.stop()
+
+
+def test_wake_no_call_after_queuing_when_already_busy(
+    machine,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
+):
+    wake, _ = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+
+    # Queue a transaction
+    _ = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1
+
+    machine._cycle()
+    assert machine.current_state == machine._BUSY
+
+    # Queue another transaction while busy
+    _ = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1  # remains unchanged
+
+
+def test_wake_no_call_after_queuing_when_already_paused(
+    machine,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
+):
+    wake, sleep = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+
+    machine.pause()
+    machine._cycle()
+    assert machine.paused
+    assert machine.current_state == machine._PAUSED
+
+    assert sleep.call_count == 1
+
+    # Queue a transaction
+    _ = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 0
 
 
 @pytest_twisted.inlineCallbacks
@@ -204,8 +325,6 @@ def test_finalize(
 def test_follow(
     chain, machine, state_observer, clock, eip1559_transaction, account, mock_wake_sleep
 ):
-    wake, sleep = mock_wake_sleep
-
     machine.start()
     assert machine.current_state == machine._IDLE
 
@@ -245,7 +364,9 @@ def test_follow(
     machine.stop()
 
 
-def test_simple_state_transitions(chain, machine, eip1559_transaction, account):
+def test_simple_state_transitions(
+    chain, machine, eip1559_transaction, account, mock_wake_sleep
+):
     assert machine.current_state == machine._IDLE
 
     for i in range(3):

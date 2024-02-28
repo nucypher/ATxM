@@ -79,7 +79,7 @@ def interval(machine):
     return 1
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_wake_sleep(machine, mocker):
     wake = mocker.patch.object(machine, "_wake")
     sleep = mocker.patch.object(machine, "_sleep")

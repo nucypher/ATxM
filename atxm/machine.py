@@ -427,7 +427,7 @@ class _Machine(StateMachine):
         Optionally provide a dictionary of additional string data
         to log during the transaction's lifecycle for identification.
         """
-        previously_busy = self._busy
+        previously_busy_or_paused = self._busy or self._pause
 
         if signer.address not in self.signers:
             self.signers[signer.address] = signer
@@ -435,7 +435,7 @@ class _Machine(StateMachine):
         tx = self._tx_tracker._queue(
             _from=signer.address, params=params, *args, **kwargs
         )
-        if not previously_busy:
+        if not previously_busy_or_paused:
             self._wake()
 
         return tx
