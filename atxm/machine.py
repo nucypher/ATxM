@@ -15,7 +15,7 @@ from atxm.exceptions import (
     TransactionFault,
     Fault,
 )
-from atxm.tacker import _TxTracker
+from atxm.tracker import _TxTracker
 from atxm.strategies import (
     AsyncTxStrategy,
     InsufficientFundsPause,
