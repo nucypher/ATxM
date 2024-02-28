@@ -338,8 +338,7 @@ class _Machine(StateMachine):
             try:
                 params = strategy.execute(pending=_active_copy)
             except Wait as e:
-                log.info(f"[pause] strategy {strategy.__class__} signalled pause: {e}")
-                self.pause()
+                log.info(f"[wait] strategy {strategy.__class__} signalled wait: {e}")
                 return
             except TransactionFault as e:
                 self._tx_tracker.fault(
