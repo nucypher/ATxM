@@ -245,7 +245,7 @@ def test_follow(
     machine.stop()
 
 
-def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, account):
+def test_simple_state_transitions(chain, machine, eip1559_transaction, account):
     assert machine.current_state == machine._IDLE
 
     for i in range(3):
@@ -257,13 +257,18 @@ def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, ac
     machine.pause()
     machine._cycle()
     assert machine.current_state == machine._PAUSED
-    assert machine._pause
+    assert machine.paused
+
+    # calling pause has no effect if already paused
+    assert machine.paused
+    for i in range(3):
+        machine.pause()
 
     # resume after pausing
     machine.resume()
     machine._cycle()
     assert machine.current_state == machine._IDLE
-    assert not machine._pause
+    assert not machine.paused
     assert not machine.busy
 
     atx = machine.queue_transaction(
@@ -280,13 +285,13 @@ def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, ac
     machine.pause()
     machine._cycle()
     assert machine.current_state == machine._PAUSED
-    assert machine._pause
+    assert machine.paused
 
     # resume after pausing
     machine.resume()
     machine._cycle()
     assert machine.current_state == machine._BUSY
-    assert not machine._pause
+    assert not machine.paused
 
     # finalize tx
     while machine.busy:
@@ -298,3 +303,9 @@ def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, ac
     # transition to idle
     machine._cycle()
     assert machine.current_state == machine._IDLE
+
+    # resume has no effect if not paused
+    assert not machine.paused
+    for i in range(3):
+        machine.resume()
+        assert machine.current_state == machine._IDLE
