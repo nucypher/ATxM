@@ -184,7 +184,7 @@ class _Machine(StateMachine):
         self._task.interval = max(
             round(average_block_time * self._BLOCK_INTERVAL), self._MIN_INTERVAL
         )
-        self.log.info(f"[working] cycle interval is {self._task.interval} seconds")
+        self.log.info(f"[working] cycle interval is now {self._task.interval} seconds")
 
     @_BUSY.enter
     def _process_busy(self):
@@ -227,9 +227,14 @@ class _Machine(StateMachine):
             self._task.stop()
 
     def _wake(self) -> None:
-        if not self._task.running:
-            log.info("[wake] waking up")
-            self._start(now=True)
+        """Runs the looping call immediately."""
+        log.info("[reset] running looping call now.")
+        if self._task.running:
+            # TODO instead of stopping/starting, can you set interval to 0
+            #  and call reset to have looping call immediately?
+            self._stop()
+
+        self._start(now=True)
 
     def _sleep(self) -> None:
         if self._task.running:
