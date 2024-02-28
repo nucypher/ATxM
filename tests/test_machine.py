@@ -1,8 +1,5 @@
 import pytest
-
 import pytest_twisted
-from twisted.internet import reactor
-from twisted.internet.task import deferLater
 
 from atxm.tx import FutureTx, PendingTx
 
@@ -14,14 +11,15 @@ def rpc_spy(mocker, w3):
 
 
 @pytest_twisted.inlineCallbacks
-def test_no_rpc_calls_when_idle(machine, state_observer, clock, rpc_spy):
+def test_no_rpc_calls_when_idle(clock, machine, state_observer, rpc_spy):
     assert machine.current_state == machine._IDLE
     assert not machine.busy
     assert len(machine.queued) == 0
 
     machine.start(now=True)
-    yield clock.advance(machine._task.interval * 3)
-    machine.stop()
+    for i in range(3):
+        yield clock.advance(1)
+        assert machine.current_state == machine._IDLE
 
     # Verify that no RPC calls were made
     assert rpc_spy.call_count == 0
@@ -32,11 +30,12 @@ def test_no_rpc_calls_when_idle(machine, state_observer, clock, rpc_spy):
     assert machine.current_state == machine._IDLE
     assert len(state_observer.transitions) == 0  # remained idle
 
+    machine.stop()
+
 
 def test_queue(
     machine,
     state_observer,
-    clock,
     rpc_spy,
     account,
     eip1559_transaction,
@@ -76,8 +75,16 @@ def test_queue(
 
 @pytest_twisted.inlineCallbacks
 def test_broadcast(
-    machine, state_observer, clock, eip1559_transaction, account, mocker
+    clock,
+    machine,
+    state_observer,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
 ):
+    wake, _ = mock_wake_sleep
+
     assert machine.current_state == machine._IDLE
     assert not machine.busy
 
@@ -90,14 +97,16 @@ def test_broadcast(
         info={"message": "something wonderful is happening..."},
     )
 
+    assert wake.call_count == 1
+
     # There is one queued transaction
     assert len(machine.queued) == 1
 
-    # distort the time-space continuum
     machine.start(now=True)
     while machine.pending is None:
         yield clock.advance(1)
-    machine.stop()
+
+    assert machine.current_state == machine._BUSY
 
     # The transaction is no longer queued
     assert len(machine.queued) == 0
@@ -110,20 +119,21 @@ def test_broadcast(
     assert atx.txhash
 
     # wait for the hook to be called
-    yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
     # tx only broadcasted and not finalized, so we are still busy
     assert machine.current_state == machine._BUSY
+
     assert len(state_observer.transitions) == 1
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
 
 
 @pytest_twisted.inlineCallbacks
 def test_finalize(
+    chain,
+    clock,
     machine,
     state_observer,
-    clock,
     eip1559_transaction,
     account,
     mock_wake_sleep,
@@ -142,16 +152,19 @@ def test_finalize(
     # There is one queued transaction
     assert len(machine.queued) == 1
 
-    # advance time to broadcast the transaction
     machine.start(now=True)
+
+    # advance to broadcast the transaction
     while machine.pending is None:
         yield clock.advance(1)
-    machine.stop()
+
+    assert machine.current_state == machine._BUSY
+
     assert machine.pending == atx
 
-    # advance time to finalize the transaction
-    machine.start(now=True)
+    # advance to finalize the transaction
     while machine.pending:
+        yield chain.mine(1)
         yield clock.advance(1)
 
     # The transaction is no longer pending
@@ -166,8 +179,6 @@ def test_finalize(
     assert atx.final
     assert atx.receipt
 
-    # wait for the hook to be called
-    yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
     yield clock.advance(1)
@@ -195,16 +206,20 @@ def test_follow(
         signer=account,
     )
 
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.current_state == machine._BUSY
+
     while not machine.finalized:
         yield clock.advance(1)
 
     assert atx.final is True
 
     while len(machine.finalized) > 0:
-        yield clock.advance(1)
         yield chain.mine(1)
-
-    machine.stop()
+        yield clock.advance(1)
 
     assert len(machine.finalized) == 0
     assert len(machine.queued) == 0
@@ -213,15 +228,13 @@ def test_follow(
 
     assert not machine.busy
 
-    # wait for the hook to be called
-    yield deferLater(reactor, 0.2, lambda: None)
-    assert sleep.call_count == 1
-
     assert machine.current_state == machine._IDLE
 
     assert len(state_observer.transitions) == 2
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
     assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
 
 
 def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, account):
@@ -231,6 +244,19 @@ def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, ac
         machine._cycle()
         # no change in state
         assert machine.current_state == machine._IDLE
+
+    # idle -> pause
+    machine.pause()
+    machine._cycle()
+    assert machine.current_state == machine._PAUSED
+    assert machine._pause
+
+    # resume after pausing
+    machine.resume()
+    machine._cycle()
+    assert machine.current_state == machine._IDLE
+    assert not machine._pause
+    assert not machine.busy
 
     atx = machine.queue_transaction(
         params=eip1559_transaction,
@@ -242,16 +268,11 @@ def test_simple_state_transitions(chain, machine, clock, eip1559_transaction, ac
     assert machine.current_state == machine._BUSY
     assert machine.busy
 
-    # pause
+    # busy -> pause
     machine.pause()
     machine._cycle()
     assert machine.current_state == machine._PAUSED
     assert machine._pause
-
-    for i in range(3):
-        machine._cycle()
-        # no change in state
-        assert machine.current_state == machine._PAUSED
 
     # resume after pausing
     machine.resume()

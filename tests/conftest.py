@@ -64,7 +64,9 @@ def machine(w3):
     clock = Clock()
     _machine = AutomaticTxMachine(w3=w3)
     _machine._task.clock = clock
-    return _machine
+    yield _machine
+
+    _machine.stop()
 
 
 @pytest.fixture
