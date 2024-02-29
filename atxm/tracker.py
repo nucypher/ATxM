@@ -190,8 +190,8 @@ class _TxTracker:
         params: TxParams,
         _from: ChecksumAddress,
         info: Dict[str, str] = None,
-        on_broadcast: Optional[Callable] = None,
-        on_finalized: Optional[Callable] = None,
+        on_broadcast: Optional[Callable[[PendingTx], None]] = None,
+        on_finalized: Optional[Callable[[FinalizedTx], None]] = None,
         on_fault: Optional[Callable] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
