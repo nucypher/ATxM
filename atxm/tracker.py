@@ -17,7 +17,7 @@ from atxm.tx import (
     PendingTx,
     TxHash,
     AsyncTx,
-    FaultyTx,
+    FaultedTx,
 )
 from atxm.utils import fire_hook
 
@@ -130,8 +130,8 @@ class _TxTracker:
         tx = self.__active
         tx.fault = fault
         tx.error = error
-        tx.__class__ = FaultyTx
-        tx: FaultyTx
+        tx.__class__ = FaultedTx
+        tx: FaultedTx
         self.faulty.append(tx)
         log.warn(
             f"[state] tracked faulty transaction #atx-{tx.id} "

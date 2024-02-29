@@ -124,7 +124,7 @@ class FinalizedTx(AsyncTx):
 
 
 @dataclass
-class FaultyTx(AsyncTx):
+class FaultedTx(AsyncTx):
     final: bool = field(default=False, init=False)
     fault: Fault
     error: Optional[str] = None

@@ -5,7 +5,7 @@ from twisted.internet.task import deferLater
 from web3.exceptions import TransactionNotFound
 
 from atxm.exceptions import Fault
-from atxm.tx import FaultyTx
+from atxm.tx import FaultedTx
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def test_timeout(
 
     assert atx.final is False
     assert isinstance(atx.fault, Fault)
-    assert isinstance(atx, FaultyTx)
+    assert isinstance(atx, FaultedTx)
 
     # check async tx advanced through the state machine
     assert atx not in machine.queued
