@@ -181,7 +181,6 @@ def test_wake_no_call_after_queuing_when_already_paused(
     assert machine.current_state == machine._IDLE
 
     machine.pause()
-    machine._cycle()
     assert machine.paused
     assert machine.current_state == machine._PAUSED
 
@@ -364,6 +363,75 @@ def test_follow(
     machine.stop()
 
 
+@pytest_twisted.inlineCallbacks
+def test_pause_when_idle(clock, machine, mocker):
+    machine.start()
+    assert machine.current_state == machine._IDLE
+    assert machine.running
+
+    stop_spy = mocker.spy(machine._task, "stop")
+    start_spy = mocker.spy(machine._task, "start")
+
+    machine.pause()
+    yield clock.advance(1)
+
+    assert machine.current_state == machine._PAUSED
+
+    assert not machine.running
+
+    assert stop_spy.call_count == 1, "task stopped since paused"
+    assert start_spy.call_count == 0
+
+    machine.resume()
+
+    assert stop_spy.call_count == 1
+    assert start_spy.call_count == 1, "machine restarted"
+
+    assert machine.current_state == machine._IDLE
+    assert machine.running
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+def test_pause_when_busy(clock, machine, eip1559_transaction, account, mocker):
+    machine.start()
+    assert machine.current_state == machine._IDLE
+    assert machine.running
+
+    _ = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.current_state == machine._BUSY
+
+    stop_spy = mocker.spy(machine._task, "stop")
+    start_spy = mocker.spy(machine._task, "start")
+
+    machine.pause()
+    yield clock.advance(1)
+
+    assert machine.current_state == machine._PAUSED
+
+    assert not machine.running
+
+    assert stop_spy.call_count == 1, "task stopped since paused"
+    assert start_spy.call_count == 0
+
+    machine.resume()
+
+    assert stop_spy.call_count == 1
+    assert start_spy.call_count == 1, "machine restarted"
+
+    assert machine.current_state == machine._BUSY
+    assert machine.running
+    machine.stop()
+
+
 def test_simple_state_transitions(
     chain, machine, eip1559_transaction, account, mock_wake_sleep
 ):
@@ -376,7 +444,6 @@ def test_simple_state_transitions(
 
     # idle -> pause
     machine.pause()
-    machine._cycle()
     assert machine.current_state == machine._PAUSED
     assert machine.paused
 
@@ -387,7 +454,7 @@ def test_simple_state_transitions(
 
     # resume after pausing
     machine.resume()
-    machine._cycle()
+    machine._cycle()  # wake doesn't do anything because mocked
     assert machine.current_state == machine._IDLE
     assert not machine.paused
     assert not machine.busy
@@ -404,13 +471,12 @@ def test_simple_state_transitions(
 
     # busy -> pause
     machine.pause()
-    machine._cycle()
     assert machine.current_state == machine._PAUSED
     assert machine.paused
 
     # resume after pausing
     machine.resume()
-    machine._cycle()
+    machine._cycle()  # wake doesn't do anything because mocked
     assert machine.current_state == machine._BUSY
     assert not machine.paused
 
@@ -426,7 +492,13 @@ def test_simple_state_transitions(
     assert machine.current_state == machine._IDLE
 
     # resume has no effect if not paused
+    wake, sleep = mock_wake_sleep
+    wake_call_count = wake.call_count
+    sleep_call_count = sleep.call_count
+
     assert not machine.paused
     for i in range(3):
         machine.resume()
         assert machine.current_state == machine._IDLE
+        assert wake.call_count == wake_call_count, "wake call count remains unchanged"
+        assert sleep.call_count == sleep_call_count, "wake call count remains unchanged"
