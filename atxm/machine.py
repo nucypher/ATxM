@@ -228,7 +228,7 @@ class _Machine(StateMachine):
 
     def _wake(self) -> None:
         """Runs the looping call immediately."""
-        log.info("[reset] running looping call now.")
+        log.info("[wake] running looping call now.")
         if self._task.running:
             # TODO instead of stopping/starting, can you set interval to 0
             #  and call reset to have looping call immediately?
@@ -409,8 +409,10 @@ class _Machine(StateMachine):
         """
         Pause the machine's tx processing loop; no txs are processed until unpaused (resume()).
         """
-        self._pause = True
-        self.log.info("[pause] pause mode requested")
+        if not self._pause:
+            self._pause = True
+            self.log.info("[pause] pause mode requested")
+            self._cycle_state()  # force a move to PAUSED state (don't wait for next iteration)
 
     def resume(self) -> None:
         """Unpauses (resumes) the machine's tx processing loop."""
