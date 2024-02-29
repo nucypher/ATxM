@@ -37,7 +37,7 @@ def _log_gas_weather(base_fee: Wei, tip: Wei) -> None:
     log.info(f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei")
 
 
-def __get_receipt_from_txhash(w3: Web3, txhash: TxHash) -> Optional[TxReceipt]:
+def _get_receipt_from_txhash(w3: Web3, txhash: TxHash) -> Optional[TxReceipt]:
     try:
         receipt = w3.eth.get_transaction_receipt(txhash)
     except TransactionNotFound:
@@ -61,7 +61,7 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
         log.error(f"[error] Transaction {pending_tx.txhash.hex()} not found")
         return
 
-    receipt = __get_receipt_from_txhash(w3=w3, txhash=txdata["hash"])
+    receipt = _get_receipt_from_txhash(w3=w3, txhash=txdata["hash"])
     if not receipt:
         return
 
@@ -86,7 +86,7 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
 
 def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
     current_block = w3.eth.block_number
-    tx_receipt = __get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
+    tx_receipt = _get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
     if not tx_receipt:
         log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
         return 0
