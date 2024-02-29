@@ -53,7 +53,7 @@ class _TxTracker:
         with open(self.__filepath, "w+t") as file:
             data = json.dumps(self.to_dict())
             file.write(data)
-        log.debug(f"[state] wrote transaction cache file {self.__filepath}")
+        log.debug(f"[tracker] wrote transaction cache file {self.__filepath}")
 
     def restore(self) -> bool:
         """
@@ -82,7 +82,7 @@ class _TxTracker:
         self.__queue.extend(FutureTx.from_dict(tx) for tx in queue)
         self.finalized = {FinalizedTx.from_dict(tx) for tx in final}
         log.debug(
-            f"[state] restored {len(queue)} transactions from cache file {self.__filepath}"
+            f"[tracker] restored {len(queue)} transactions from cache file {self.__filepath}"
         )
 
         return bool(data)
@@ -96,10 +96,10 @@ class _TxTracker:
         self.commit()
         if old:
             log.debug(
-                f"[state] updated active transaction {old.hex()} -> {tx.txhash.hex()}"
+                f"[tracker] updated active transaction {old.hex()} -> {tx.txhash.hex()}"
             )
             return
-        log.debug(f"[state] tracked active transaction {tx.txhash.hex()}")
+        log.debug(f"[tracker] tracked active transaction {tx.txhash.hex()}")
 
     def morph(self, tx: FutureTx, txhash: TxHash) -> PendingTx:
         """
@@ -130,7 +130,7 @@ class _TxTracker:
         tx.__class__ = FaultedTx
         tx: FaultedTx
         log.warn(
-            f"[state] transaction #atx-{tx.id} faulted {fault}{f' ({error})' if error else ''}"
+            f"[tracker] transaction #atx-{tx.id} faulted {fault}{f' ({error})' if error else ''}"
         )
         if clear_active:
             self.clear_active()
@@ -149,7 +149,7 @@ class _TxTracker:
         self.__active.__class__ = FinalizedTx
         tx = self.__active
         self.finalized.add(tx)  # noqa
-        log.info(f"[state] #atx-{tx.id} pending -> finalized")
+        log.info(f"[tracker] #atx-{tx.id} pending -> finalized")
         self.clear_active()
         if hook:
             fire_hook(hook=hook, tx=tx)
@@ -159,8 +159,8 @@ class _TxTracker:
         self.__active = None
         self.commit()
         log.debug(
-            f"[state] cleared 1 pending transaction \n"
-            f"[state] {len(self.queue)} queued "
+            f"[tracker] cleared 1 pending transaction \n"
+            f"[tracker] {len(self.queue)} queued "
             f"transaction{'s' if len(self.queue) != 1 else ''} remaining"
         )
 
@@ -183,7 +183,7 @@ class _TxTracker:
         self.__queue.append(tx)
         self.commit()
         log.info(
-            f"[state] re-queued transaction #atx-{tx.id} "
+            f"[tracker] re-queued transaction #atx-{tx.id} "
             f"priority {len(self.__queue)}"
         )
 
@@ -213,6 +213,6 @@ class _TxTracker:
         self.commit()
         self.__COUNTER += 1
         log.info(
-            f"[state] queued transaction #atx-{tx.id} priority {len(self.__queue)}"
+            f"[tracker] queued transaction #atx-{tx.id} priority {len(self.__queue)}"
         )
         return tx
