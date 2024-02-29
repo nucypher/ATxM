@@ -350,9 +350,6 @@ class _Machine(StateMachine):
                 # keep the parameters as they are.
                 _active_copy.params.update(params)
 
-            if self._pause:
-                self.resume()
-
         # (!) retry the transaction with the new parameters
         retry_params = TxParams(_active_copy.params)
         _names = " -> ".join(s.name for s in self.strategies)
