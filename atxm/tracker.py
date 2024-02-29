@@ -200,7 +200,7 @@ class _TxTracker:
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
         on_finalized: Optional[Callable[[FinalizedTx], None]] = None,
-        on_fault: Optional[Callable] = None,
+        on_fault: Optional[Callable[[FaultedTx], None]] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
         tx = FutureTx(
