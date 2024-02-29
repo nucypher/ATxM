@@ -115,9 +115,9 @@ class _Machine(StateMachine):
         self.w3 = w3
         self.signers = {}
         self.log = log
-        self.strategies = [s(w3) for s in self.STRATEGIES]
+        self._strategies = [s(w3) for s in self.STRATEGIES]
         if strategies:
-            self.strategies.extend(list(strategies))
+            self._strategies.extend(list(strategies))
 
         # state
         self._pause = False
@@ -323,7 +323,7 @@ class _Machine(StateMachine):
             raise RuntimeError("No active transaction to strategize")
 
         _active_copy = deepcopy(self._tx_tracker.pending)
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             try:
                 params = strategy.execute(pending=_active_copy)
             except Wait as e:
@@ -339,7 +339,7 @@ class _Machine(StateMachine):
 
         # (!) retry the transaction with the new parameters
         retry_params = TxParams(_active_copy.params)
-        _names = " -> ".join(s.name for s in self.strategies)
+        _names = " -> ".join(s.name for s in self._strategies)
         pending_tx = self.__fire(tx=retry_params, msg=_names)
         self.log.info(f"[retry] transaction #{pending_tx.id} has been re-broadcasted")
 
