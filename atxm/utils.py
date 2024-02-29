@@ -73,7 +73,9 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
         log.warn(
             f"[reverted] Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
         )
-        raise TransactionReverted(receipt)
+        raise TransactionReverted(
+            tx=pending_tx, receipt=receipt, message=f"Reverted with EVM status {status}"
+        )
 
     log.info(
         f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "

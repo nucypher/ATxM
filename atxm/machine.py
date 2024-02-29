@@ -1,27 +1,22 @@
 from copy import deepcopy
-from typing import Optional, List, Type
+from typing import List, Optional, Type
 
 from eth_account.signers.local import LocalAccount
-from statemachine import StateMachine, State
+from statemachine import State, StateMachine
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
 from web3 import Web3
 from web3.types import TxParams
 
-from atxm.exceptions import (
-    Wait,
-    TransactionReverted,
-    TransactionFault,
-    Fault,
-)
-from atxm.tracker import _TxTracker
+from atxm.exceptions import TransactionFaulted, TransactionReverted, Wait
 from atxm.strategies import (
     AsyncTxStrategy,
+    FixedRateSpeedUp,
     InsufficientFundsPause,
     TimeoutPause,
-    FixedRateSpeedUp,
 )
+from atxm.tracker import _TxTracker
 from atxm.tx import (
     FutureTx,
     PendingTx,
@@ -32,8 +27,8 @@ from atxm.utils import (
     _get_confirmations,
     _get_receipt,
     _handle_rpc_error,
-    fire_hook,
     _make_tx_params,
+    fire_hook,
 )
 from .logging import log
 
@@ -265,11 +260,8 @@ class _Machine(StateMachine):
             receipt = _get_receipt(w3=self.w3, pending_tx=pending_tx)
 
         # Outcome 2: the pending transaction was reverted (final error)
-        except TransactionReverted:
-            self._tx_tracker.fault(
-                error=pending_tx.txhash.hex(),
-                fault=Fault.REVERT,
-            )
+        except TransactionReverted as e:
+            self._tx_tracker.fault(fault_error=e)
             return True
 
         # Outcome 3: pending transaction is finalized (final success)
@@ -337,11 +329,8 @@ class _Machine(StateMachine):
             except Wait as e:
                 log.info(f"[wait] strategy {strategy.__class__} signalled wait: {e}")
                 return
-            except TransactionFault as e:
-                self._tx_tracker.fault(
-                    error=self._tx_tracker.pending.txhash.hex(),
-                    fault=e.fault,
-                )
+            except TransactionFaulted as e:
+                self._tx_tracker.fault(fault_error=e)
                 return
             if params:
                 # in case the strategy accidentally returns None

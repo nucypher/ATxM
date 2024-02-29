@@ -9,7 +9,7 @@ from typing import Callable, Deque, Dict, Optional, Set, Tuple
 from eth_typing import ChecksumAddress
 from web3.types import TxParams, TxReceipt
 
-from atxm.exceptions import Fault
+from atxm.exceptions import TransactionFaulted
 from atxm.logging import log
 from atxm.tx import (
     FinalizedTx,
@@ -116,20 +116,28 @@ class _TxTracker:
 
     def fault(
         self,
-        fault: Fault,
-        error: Optional[str] = None,
+        fault_error: TransactionFaulted,
     ) -> None:
         """Fault the active transaction."""
-        hook = self.__active.on_fault
         if not self.__active:
             raise RuntimeError("No active transaction to fault")
+        if fault_error.tx.id != self.__active.id:
+            raise RuntimeError(
+                f"Mismatch between active tx ({self.__active.id}) and faulted tx ({fault_error.tx.id})"
+            )
+
+        hook = self.__active.on_fault
         tx = self.__active
-        tx.fault = fault
-        tx.error = error
+        txhash = tx.txhash
+
+        tx.fault = fault_error.fault
+        tx.error = fault_error.message
         tx.__class__ = FaultedTx
         tx: FaultedTx
+
         log.warn(
-            f"[tracker] transaction #atx-{tx.id} faulted {fault}{f' ({error})' if error else ''}"
+            f"[tracker] transaction #atx-{tx.id} faulted {tx.fault.value}; "
+            f"{txhash} {f'{fault_error.message}' if fault_error.message else ''}"
         )
         self.clear_active()
         if hook:
