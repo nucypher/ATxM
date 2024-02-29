@@ -52,7 +52,6 @@ def test_timeout(
     # check async tx advanced through the state machine
     assert atx not in machine.queued
     assert machine.pending is None
-    assert atx in machine.faults
     assert atx.final is False
 
     yield deferLater(reactor, 0.2, lambda: None)

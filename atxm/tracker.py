@@ -16,7 +16,6 @@ from atxm.tx import (
     FutureTx,
     PendingTx,
     TxHash,
-    AsyncTx,
     FaultedTx,
 )
 from atxm.utils import fire_hook
@@ -27,7 +26,6 @@ class _TxTracker:
 
     _FILEPATH = ".txs.json"
     __COUNTER = 0  # id generator
-    __FAULT_CACHE_SIZE = 10
 
     def __init__(self, disk_cache: bool, filepath: Optional[Path] = None):
         self.__filepath = filepath or self._FILEPATH
@@ -35,7 +33,6 @@ class _TxTracker:
         self.__queue: Deque[FutureTx] = deque()
         self.__active: Optional[PendingTx] = None
         self.finalized: Set[FinalizedTx] = set()
-        self.faulty: Deque[AsyncTx] = deque(maxlen=self.__FAULT_CACHE_SIZE)
 
         self.disk_cache = disk_cache
         if disk_cache:
@@ -132,10 +129,8 @@ class _TxTracker:
         tx.error = error
         tx.__class__ = FaultedTx
         tx: FaultedTx
-        self.faulty.append(tx)
         log.warn(
-            f"[state] tracked faulty transaction #atx-{tx.id} "
-            f"{len(self.faulty)}/{self.faulty.maxlen} faults cached"
+            f"[state] transaction #atx-{tx.id} faulted {fault}{f' ({error})' if error else ''}"
         )
         if clear_active:
             self.clear_active()
@@ -218,6 +213,6 @@ class _TxTracker:
         self.commit()
         self.__COUNTER += 1
         log.info(
-            f"[state] queued transaction #atx-{tx.id} " f"priority {len(self.__queue)}"
+            f"[state] queued transaction #atx-{tx.id} priority {len(self.__queue)}"
         )
         return tx
