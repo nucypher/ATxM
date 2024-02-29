@@ -128,7 +128,7 @@ class _TxTracker:
 
         hook = self.__active.on_fault
         tx = self.__active
-        txhash = tx.txhash
+        txhash = tx.txhash.hex()
 
         tx.fault = fault_error.fault
         tx.error = fault_error.message
@@ -136,8 +136,8 @@ class _TxTracker:
         tx: FaultedTx
 
         log.warn(
-            f"[tracker] transaction #atx-{tx.id} faulted {tx.fault.value}; "
-            f"{txhash} {f'{fault_error.message}' if fault_error.message else ''}"
+            f"[tracker] transaction #atx-{tx.id} faulted with '{tx.fault.value}'; "
+            f"{txhash}{f' ({fault_error.message})' if fault_error.message else ''}"
         )
         self.clear_active()
         if hook:
