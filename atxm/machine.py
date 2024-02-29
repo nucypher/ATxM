@@ -269,7 +269,6 @@ class _Machine(StateMachine):
             self._tx_tracker.fault(
                 error=pending_tx.txhash.hex(),
                 fault=Fault.REVERT,
-                clear_active=True,
             )
             return True
 
@@ -342,7 +341,6 @@ class _Machine(StateMachine):
                 self._tx_tracker.fault(
                     error=self._tx_tracker.pending.txhash.hex(),
                     fault=e.fault,
-                    clear_active=e.clear,
                 )
                 return
             if params:

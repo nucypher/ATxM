@@ -78,7 +78,6 @@ class InsufficientFundsPause(AsyncTxStrategy):
                 tx=pending,
                 fault=Fault.INSUFFICIENT_FUNDS,
                 message="Insufficient funds",
-                clear=False,
             )
         # log.warn(f"Insufficient funds for transaction #{pending.params['nonce']}")
         # raise Wait("Insufficient funds")
@@ -129,7 +128,6 @@ class TimeoutPause(AsyncTxStrategy):
                 tx=pending,
                 fault=Fault.TIMEOUT,
                 message="Transaction has timed out",
-                clear=True,  # signal to clear the active transaction
             )
         return pending.params
 

@@ -40,11 +40,10 @@ class Wait(Exception):
 class TransactionFault(Exception):
     """raised when a transaction has been faulted"""
 
-    def __init__(self, tx, fault: Fault, clear: bool, message: str):
+    def __init__(self, tx, fault: Fault, message: str):
         self.tx = tx
         self.fault = fault
         self.message = message
-        self.clear = clear
         super().__init__(message)
 
 

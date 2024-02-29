@@ -117,7 +117,6 @@ class _TxTracker:
     def fault(
         self,
         fault: Fault,
-        clear_active: bool,
         error: Optional[str] = None,
     ) -> None:
         """Fault the active transaction."""
@@ -132,8 +131,7 @@ class _TxTracker:
         log.warn(
             f"[tracker] transaction #atx-{tx.id} faulted {fault}{f' ({error})' if error else ''}"
         )
-        if clear_active:
-            self.clear_active()
+        self.clear_active()
         if hook:
             fire_hook(hook=hook, tx=tx)
 
