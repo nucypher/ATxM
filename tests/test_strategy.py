@@ -39,7 +39,7 @@ def test_timeout_strategy(w3, mocker):
 
     # 1) tx just created a does not time out
     for i in range(3):
-        assert timeout_strategy.execute(pending_tx) == params
+        assert timeout_strategy.execute(pending_tx) is None  # no change to params
 
     # 2) remaining time is < warn factor; still doesn't time out but we warn about it
     pending_tx.created = (
@@ -53,7 +53,7 @@ def test_timeout_strategy(w3, mocker):
             warnings.append(event)
 
     globalLogPublisher.addObserver(warning_trapper)
-    assert timeout_strategy.execute(pending_tx) == params
+    assert timeout_strategy.execute(pending_tx) is None  # no change to params
     globalLogPublisher.removeObserver(warning_trapper)
 
     assert len(warnings) == 1
@@ -65,7 +65,7 @@ def test_timeout_strategy(w3, mocker):
 
     # 3) close to timeout but not quite (5s short)
     pending_tx.created = (now - timedelta(seconds=(TIMEOUT - 5))).timestamp()
-    assert timeout_strategy.execute(pending_tx) == params
+    assert timeout_strategy.execute(pending_tx) is None  # no change to params
 
     # 4) timeout
     pending_tx.created = (now - timedelta(seconds=(TIMEOUT + 1))).timestamp()
