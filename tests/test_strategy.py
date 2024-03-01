@@ -12,7 +12,16 @@ from atxm.tx import PendingTx
 
 def test_timeout_strategy(w3, mocker):
     TIMEOUT = 600  # 10 mins
+
+    # default timeout
+    timeout_strategy = TimeoutStrategy(w3)
+    assert timeout_strategy.timeout == TimeoutStrategy._TIMEOUT
+
+    # specific timeout
     timeout_strategy = TimeoutStrategy(w3, timeout=TIMEOUT)
+    assert timeout_strategy.timeout == TIMEOUT
+
+    assert timeout_strategy.name == timeout_strategy._NAME
 
     # None tx does not time out
     with pytest.raises(RuntimeError):
