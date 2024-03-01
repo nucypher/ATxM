@@ -30,7 +30,7 @@ class AsyncTxStrategy(ABC):
         """Used to identify the strategy in logs."""
         return self._NAME
 
-    def execute(self, pending: PendingTx) -> TxParams:
+    def execute(self, pending: PendingTx) -> Optional[TxParams]:
         """
         Execute the strategy.
 
@@ -40,9 +40,10 @@ class AsyncTxStrategy(ABC):
         (like tx.txhash, tx.params, tx.created, etc).
 
         This method must do one of the following:
-        - Raise `Wait` to pause retries and wait around for a bit.
-        - Raise `Fault`to signal the transaction cannot be retried.
-        - Returns a TxParams dictionary to use in the next attempt.
+        - Raise `TransactionFaulted`to signal the transaction cannot be retried.
+        - Returns an updated TxParams dictionary to use in the next attempt.
+        - Returns None if the strategy makes no changes to the existing TxParams and
+          signal that the machine should just wait for the existing tx
 
         NOTE: Do not mutate the input `tx` object. Return a new TxParams
         dictionary with the updated transaction parameters. The input
