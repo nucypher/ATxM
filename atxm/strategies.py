@@ -7,7 +7,6 @@ from web3.types import Gwei, TxParams, Wei, PendingTx
 
 from atxm.exceptions import (
     Fault,
-    Wait,
     TransactionFaulted,
 )
 from atxm.logging import log
@@ -69,7 +68,7 @@ class InsufficientFundsPause(AsyncTxStrategy):
 
     _NAME = "insufficient-funds"
 
-    def execute(self, pending: PendingTx) -> TxParams:
+    def execute(self, pending: PendingTx) -> Optional[TxParams]:
         balance = self.w3.eth.get_balance(pending._from)
         if balance == 0:
             self.log.warn(
@@ -81,8 +80,7 @@ class InsufficientFundsPause(AsyncTxStrategy):
                 message="Insufficient funds",
             )
         # log.warn(f"Insufficient funds for transaction #{pending.params['nonce']}")
-        # raise Wait("Insufficient funds")
-        return pending.params
+        return None
 
 
 class TimeoutStrategy(AsyncTxStrategy):
@@ -125,7 +123,7 @@ class TimeoutStrategy(AsyncTxStrategy):
             )
         return False
 
-    def execute(self, pending: PendingTx) -> TxParams:
+    def execute(self, pending: PendingTx) -> Optional[TxParams]:
         if not pending:
             # should never get here
             raise RuntimeError("pending tx should not be None")
@@ -137,43 +135,58 @@ class TimeoutStrategy(AsyncTxStrategy):
                 fault=Fault.TIMEOUT,
                 message="Transaction has timed out",
             )
-        return pending.params
+        return None
 
 
 class FixedRateSpeedUp(AsyncTxStrategy):
     """Speedup strategy for pending transactions."""
 
-    SPEEDUP_FACTOR = 1.125  # 12.5% increase
-    MAX_TIP = Gwei(1)  # gwei maxPriorityFeePerGas per transaction
+    _SPEEDUP_INCREASE = 0.125  # 12.5%
+    _MAX_TIP = Gwei(1)  # gwei maxPriorityFeePerGas per transaction
 
-    _NAME = f"speedup-{SPEEDUP_FACTOR}%"
+    _NAME = "speedup"
+
+    def __init__(
+        self,
+        w3: Web3,
+        speedup_percentage: Optional[float] = None,
+        max_tip: Optional[Gwei] = None,
+    ):
+        super().__init__(w3)
+
+        if speedup_percentage and speedup_percentage >= 1:
+            raise ValueError(
+                f"Invalid speedup increase percentage - {speedup_percentage}"
+            )
+
+        self.speedup_factor = 1 + (speedup_percentage or self._SPEEDUP_INCREASE)
+        self.max_tip = max_tip or self._MAX_TIP
 
     def _calculate_speedup_fee(self, pending: TxParams) -> Tuple[Wei, Wei]:
         base_fee = self.w3.eth.get_block("latest")["baseFeePerGas"]
         suggested_tip = self.w3.eth.max_priority_fee
         _log_gas_weather(base_fee, suggested_tip)
         max_priority_fee = round(
-            max(pending["maxPriorityFeePerGas"], suggested_tip) * self.SPEEDUP_FACTOR
+            max(pending["maxPriorityFeePerGas"], suggested_tip) * self.speedup_factor
         )
         max_fee_per_gas = round(
             max(
-                pending["maxFeePerGas"] * self.SPEEDUP_FACTOR,
+                pending["maxFeePerGas"] * self.speedup_factor,
                 (base_fee * 2) + max_priority_fee,
             )
         )
         return max_priority_fee, max_fee_per_gas
 
-    def execute(self, pending: PendingTx) -> TxParams:
+    def execute(self, pending: PendingTx) -> Optional[TxParams]:
         params = pending.params
         old_tip, old_max_fee = params["maxPriorityFeePerGas"], params["maxFeePerGas"]
         new_tip, new_max_fee = self._calculate_speedup_fee(params)
         tip_increase = round(Web3.from_wei(new_tip - old_tip, "gwei"), 4)
         fee_increase = round(Web3.from_wei(new_max_fee - old_max_fee, "gwei"), 4)
 
-        if new_tip > self.MAX_TIP:
-            raise Wait(
-                f"Pending transaction maxPriorityFeePerGas exceeds spending cap {self.MAX_TIP}"
-            )
+        if new_tip > self.max_tip:
+            # nothing the strategy can do here - don't change the params
+            return None
 
         latest_nonce = self.w3.eth.get_transaction_count(params["from"], "latest")
         pending_nonce = self.w3.eth.get_transaction_count(params["from"], "pending")

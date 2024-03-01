@@ -9,7 +9,7 @@ from twisted.internet.task import LoopingCall
 from web3 import Web3
 from web3.types import TxParams
 
-from atxm.exceptions import TransactionFaulted, TransactionReverted, Wait
+from atxm.exceptions import TransactionFaulted, TransactionReverted
 from atxm.strategies import (
     AsyncTxStrategy,
     FixedRateSpeedUp,
@@ -249,7 +249,7 @@ class _Machine(StateMachine):
         1. paused
         2. reverted (fault)
         3. finalized
-        4. strategize: retry, wait, or fault
+        4. strategize: retry, do nothing and wait, or fault
 
         Returns True if the next queued transaction can be broadcasted right now.
         """
@@ -323,12 +323,10 @@ class _Machine(StateMachine):
             raise RuntimeError("No active transaction to strategize")
 
         _active_copy = deepcopy(self._tx_tracker.pending)
+        params_updated = False
         for strategy in self._strategies:
             try:
                 params = strategy.execute(pending=_active_copy)
-            except Wait as e:
-                log.info(f"[wait] strategy {strategy.__class__} signalled wait: {e}")
-                return
             except TransactionFaulted as e:
                 self._tx_tracker.fault(fault_error=e)
                 return
@@ -336,6 +334,13 @@ class _Machine(StateMachine):
                 # in case the strategy accidentally returns None
                 # keep the parameters as they are.
                 _active_copy.params.update(params)
+                params_updated = True
+
+        if not params_updated:
+            log.info(
+                f"[wait] strategies made no suggested updates to pending tx #{_active_copy.id} - skipping retry round"
+            )
+            return
 
         # (!) retry the transaction with the new parameters
         retry_params = TxParams(_active_copy.params)

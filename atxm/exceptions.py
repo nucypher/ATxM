@@ -30,13 +30,6 @@ class InsufficientFunds(RPCError):
     """raised when a transaction exceeds the spending cap"""
 
 
-class Wait(Exception):
-    """
-    Raised when a strategy exceeds a limitation.
-    Used to mark a pending transaction as "wait, don't retry".
-    """
-
-
 class TransactionFaulted(Exception):
     """Raised when a transaction has been faulted."""
 
