@@ -58,10 +58,7 @@ def test_timeout_strategy(w3, mocker):
 
     assert len(warnings) == 1
     warning = warnings[0]["log_format"]
-    assert (
-        f"[pending_timeout] Transaction {pending_tx.txhash.hex()} will timeout in"
-        in warning
-    )
+    assert f"[timeout] Transaction {pending_tx.txhash.hex()} will timeout in" in warning
 
     # 3) close to timeout but not quite (5s short)
     pending_tx.created = (now - timedelta(seconds=(TIMEOUT - 5))).timestamp()

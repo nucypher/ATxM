@@ -111,12 +111,12 @@ class TimeoutStrategy(AsyncTxStrategy):
         human_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S")
         if time_remaining.seconds < (self.timeout * self._WARN_FACTOR):
             self.log.warn(
-                f"[pending_timeout] Transaction {pending.txhash.hex()} will timeout in "
+                f"[timeout] Transaction {pending.txhash.hex()} will timeout in "
                 f"{time_remaining} at {human_end_time}"
             )
         else:
             self.log.info(
-                f"[pending] {pending.txhash.hex()} "
+                f"[timeout] {pending.txhash.hex()} "
                 f"{elapsed_time.seconds}s Elapsed | "
                 f"{time_remaining} Remaining | "
                 f"Timeout at {human_end_time}"
