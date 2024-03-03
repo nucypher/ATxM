@@ -1,9 +1,10 @@
+import math
 from abc import ABC
 from datetime import datetime, timedelta
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 from web3 import Web3
-from web3.types import Gwei, TxParams, Wei, PendingTx
+from web3.types import Gwei, PendingTx, TxParams
 
 from atxm.exceptions import (
     Fault,
@@ -142,65 +143,103 @@ class FixedRateSpeedUp(AsyncTxStrategy):
     """Speedup strategy for pending transactions."""
 
     _SPEEDUP_INCREASE = 0.125  # 12.5%
+
+    # TODO: is this chain dependent?
     _MAX_TIP = Gwei(1)  # gwei maxPriorityFeePerGas per transaction
 
     _NAME = "speedup"
 
+    _GAS_PRICE_FIELD = "gasPrice"
+    _MAX_FEE_PER_GAS_FIELD = "maxFeePerGas"
+    _MAX_PRIORITY_FEE_PER_GAS_FIELD = "maxPriorityFeePerGas"
+
     def __init__(
         self,
         w3: Web3,
-        speedup_percentage: Optional[float] = None,
-        max_tip: Optional[Gwei] = None,
+        speedup_percentage: float = _SPEEDUP_INCREASE,
+        max_tip: Gwei = _MAX_TIP,
     ):
         super().__init__(w3)
 
-        if speedup_percentage and speedup_percentage >= 1:
+        if speedup_percentage >= 1 or speedup_percentage <= 0.10:
             raise ValueError(
                 f"Invalid speedup increase percentage - {speedup_percentage}"
             )
+        if max_tip <= 0:
+            raise ValueError(f"Invalid max tip - {max_tip}")
 
-        self.speedup_factor = 1 + (speedup_percentage or self._SPEEDUP_INCREASE)
-        self.max_tip = max_tip or self._MAX_TIP
+        self.speedup_factor = 1 + speedup_percentage
+        self.max_tip = max_tip
 
-    def _calculate_speedup_fee(self, pending: TxParams) -> Tuple[Wei, Wei]:
-        base_fee = self.w3.eth.get_block("latest")["baseFeePerGas"]
+    def _calculate_eip1559_speedup_fee(self, params: TxParams) -> Tuple[int, int]:
+        current_base_fee = self.w3.eth.get_block("latest")["baseFeePerGas"]
         suggested_tip = self.w3.eth.max_priority_fee
-        _log_gas_weather(base_fee, suggested_tip)
-        max_priority_fee = round(
-            max(pending["maxPriorityFeePerGas"], suggested_tip) * self.speedup_factor
+        _log_gas_weather(current_base_fee, suggested_tip)
+
+        # default to 1 if not specified in tx
+        prior_max_priority_fee = params.get("maxPriorityFeePerGas", 1)
+        updated_max_priority_fee = math.ceil(
+            max(prior_max_priority_fee, suggested_tip) * self.speedup_factor
         )
-        max_fee_per_gas = round(
+        updated_max_fee_per_gas = math.ceil(
             max(
-                pending["maxFeePerGas"] * self.speedup_factor,
-                (base_fee * 2) + max_priority_fee,
+                params.get("maxFeePerGas", 0) * self.speedup_factor,
+                (current_base_fee * 2) + updated_max_priority_fee,
             )
         )
-        return max_priority_fee, max_fee_per_gas
+        return updated_max_priority_fee, updated_max_fee_per_gas
+
+    def _calculate_legacy_speedup_fee(self, params: TxParams) -> int:
+        generated_gas_price = self.w3.eth.generate_gas_price(params)
+        # increase prior value by speedup factor
+        minimum_gas_price = int(
+            math.ceil(params[self._GAS_PRICE_FIELD] * self.speedup_factor)
+        )
+        if generated_gas_price and generated_gas_price > minimum_gas_price:
+            return generated_gas_price
+
+        return minimum_gas_price
 
     def execute(self, pending: PendingTx) -> Optional[TxParams]:
         params = pending.params
-        old_tip, old_max_fee = params["maxPriorityFeePerGas"], params["maxFeePerGas"]
-        new_tip, new_max_fee = self._calculate_speedup_fee(params)
-        tip_increase = round(Web3.from_wei(new_tip - old_tip, "gwei"), 4)
-        fee_increase = round(Web3.from_wei(new_max_fee - old_max_fee, "gwei"), 4)
 
-        if new_tip > self.max_tip:
-            # nothing the strategy can do here - don't change the params
-            return None
+        if self._GAS_PRICE_FIELD in pending.params:
+            old_gas_price = params[self._GAS_PRICE_FIELD]
+            new_gas_price = self._calculate_legacy_speedup_fee(pending.params)
+            log.info(
+                f"[speedup] Speeding up legacy transaction #{params['nonce']} \n"
+                f"gasPrice {old_gas_price} -> {new_gas_price}"
+            )
+            params[self._GAS_PRICE_FIELD] = new_gas_price
+        else:
+            old_tip, old_max_fee = (
+                params[self._MAX_PRIORITY_FEE_PER_GAS_FIELD],
+                params[self._MAX_FEE_PER_GAS_FIELD],
+            )
+            new_tip, new_max_fee = self._calculate_eip1559_speedup_fee(params)
+            if new_tip > self.max_tip:
+                # nothing the strategy can do here - don't change the params
+                log.warn(
+                    f"[speedup] Pending transaction's maxPriorityFeePerGas exceeds spending cap {self.max_tip}; can't speed up any faster"
+                )
+                return None
+
+            tip_increase = round(Web3.from_wei(new_tip - old_tip, "gwei"), 4)
+            fee_increase = round(Web3.from_wei(new_max_fee - old_max_fee, "gwei"), 4)
+            log.info(
+                f"[speedup] Speeding up transaction #{params['nonce']} \n"
+                f"{self._MAX_PRIORITY_FEE_PER_GAS_FIELD} (~+{tip_increase} gwei) {old_tip} -> {new_tip} \n"
+                f"{self._MAX_FEE_PER_GAS_FIELD} (~+{fee_increase} gwei) {old_max_fee} -> {new_max_fee}"
+            )
+            params = dict(params)
+            params[self._MAX_PRIORITY_FEE_PER_GAS_FIELD] = new_tip
+            params[self._MAX_FEE_PER_GAS_FIELD] = new_max_fee
 
         latest_nonce = self.w3.eth.get_transaction_count(params["from"], "latest")
         pending_nonce = self.w3.eth.get_transaction_count(params["from"], "pending")
         if pending_nonce - latest_nonce > 0:
             log.warn("Overriding pending transaction!")
 
-        log.info(
-            f"Speeding up transaction #{params['nonce']} \n"
-            f"maxPriorityFeePerGas (~+{tip_increase} gwei) {old_tip} -> {new_tip} \n"
-            f"maxFeePerGas (~+{fee_increase} gwei) {old_max_fee} -> {new_max_fee}"
-        )
-        params = dict(params)
-        params["maxPriorityFeePerGas"] = new_tip
-        params["maxFeePerGas"] = new_max_fee
         params["nonce"] = latest_nonce
         params = TxParams(params)
         return params

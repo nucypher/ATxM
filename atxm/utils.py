@@ -31,10 +31,12 @@ def _get_average_blocktime(w3: Web3, sample_size: int) -> float:
     return average_block_time
 
 
-def _log_gas_weather(base_fee: Wei, tip: Wei) -> None:
+def _log_gas_weather(base_fee: Wei, suggested_tip: Wei) -> None:
     base_fee_gwei = Web3.from_wei(base_fee, "gwei")
-    tip_gwei = Web3.from_wei(tip, "gwei")
-    log.info(f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei")
+    tip_gwei = Web3.from_wei(suggested_tip, "gwei")
+    log.info(
+        f"[gas] Gas conditions: base {base_fee_gwei} gwei | max tip {tip_gwei} gwei"
+    )
 
 
 def _get_receipt_from_txhash(w3: Web3, txhash: TxHash) -> Optional[TxReceipt]:

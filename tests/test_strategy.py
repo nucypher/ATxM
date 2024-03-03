@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 import pytest
 from hexbytes import HexBytes
 from twisted.logger import LogLevel, globalLogPublisher
-from web3.types import TxParams
+from web3.types import Gwei, TxParams
 
 from atxm.exceptions import Fault, TransactionFaulted
-from atxm.strategies import TimeoutStrategy
+from atxm.strategies import FixedRateSpeedUp, TimeoutStrategy
 from atxm.tx import PendingTx
 
 
@@ -72,3 +72,17 @@ def test_timeout_strategy(w3, mocker):
     e.tx = pending_tx
     e.fault = Fault.TIMEOUT
     e.message = "Transaction has timed out"
+
+
+def test_speedup_strategy(w3, eip1559_transaction, mocker):
+    # invalid increase percentage
+    for speedup_perc in [-1, -0.24, 0, 1, 1.01, 1.1]:
+        with pytest.raises(ValueError):
+            _ = FixedRateSpeedUp(w3=w3, speedup_percentage=speedup_perc)
+
+    # invalid max tip
+    with pytest.raises(ValueError):
+        _ = FixedRateSpeedUp(w3=w3, max_tip=Gwei(0))
+
+    speedup_strategy = FixedRateSpeedUp(w3)
+    assert speedup_strategy.name == "speedup"
