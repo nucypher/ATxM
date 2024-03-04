@@ -91,11 +91,13 @@ class TimeoutStrategy(AsyncTxStrategy):
 
     _TIMEOUT = 60 * 60  # 1 hour in seconds
 
-    _WARN_FACTOR = 0.05  # 5% of timeout remaining
+    _WARN_FACTOR = 0.15  # 15% of timeout remaining
 
     def __init__(self, w3: Web3, timeout: Optional[int] = None):
         super().__init__(w3)
         self.timeout = timeout or self._TIMEOUT
+        # use 30s as default in case timeout is too small for warn factor
+        self._warn_threshold = max(30, self.timeout * self._WARN_FACTOR)
 
     def __active_timed_out(self, pending: PendingTx) -> bool:
         """Returns True if the active transaction has timed out."""
@@ -110,7 +112,7 @@ class TimeoutStrategy(AsyncTxStrategy):
         end_time = creation_time + timedelta(seconds=self.timeout)
         time_remaining = end_time - now
         human_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S")
-        if time_remaining.seconds < (self.timeout * self._WARN_FACTOR):
+        if time_remaining.seconds < self._warn_threshold:
             self.log.warn(
                 f"[timeout] Transaction {pending.txhash.hex()} will timeout in "
                 f"{time_remaining} at {human_end_time}"

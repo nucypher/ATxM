@@ -14,15 +14,28 @@ from atxm.tx import PendingTx
 
 
 def test_timeout_strategy(w3, mocker):
-    TIMEOUT = 600  # 10 mins
+    TIMEOUT = 900  # 15 mins
 
     # default timeout
     timeout_strategy = TimeoutStrategy(w3)
     assert timeout_strategy.timeout == TimeoutStrategy._TIMEOUT
+    assert (
+        timeout_strategy._warn_threshold
+        == TimeoutStrategy._TIMEOUT * TimeoutStrategy._WARN_FACTOR
+    )
+
+    # specific timeout - low timeout
+    low_timeout = 60  # 60s
+    timeout_strategy = TimeoutStrategy(w3, timeout=low_timeout)
+    assert timeout_strategy.timeout == low_timeout
+    assert (
+        timeout_strategy._warn_threshold == 30
+    )  # timeout so low that max warn threshold hit
 
     # specific timeout
     timeout_strategy = TimeoutStrategy(w3, timeout=TIMEOUT)
     assert timeout_strategy.timeout == TIMEOUT
+    assert timeout_strategy._warn_threshold == TIMEOUT * TimeoutStrategy._WARN_FACTOR
 
     assert timeout_strategy.name == timeout_strategy._NAME
 
