@@ -232,8 +232,8 @@ class FixedRateSpeedUp(AsyncTxStrategy):
             params[self._GAS_PRICE_FIELD] = new_gas_price
         else:
             old_tip, old_max_fee = (
-                params[self._MAX_PRIORITY_FEE_PER_GAS_FIELD],
-                params[self._MAX_FEE_PER_GAS_FIELD],
+                params.get(self._MAX_PRIORITY_FEE_PER_GAS_FIELD),
+                params.get(self._MAX_FEE_PER_GAS_FIELD),
             )
             suggested_tip, new_tip, new_max_fee = self._calculate_eip1559_speedup_fee(
                 params
@@ -242,19 +242,27 @@ class FixedRateSpeedUp(AsyncTxStrategy):
                 # nothing the strategy can do here - don't change the params
                 log.warn(
                     f"[speedup] Increasing pending transaction's maxPriorityFeePerGas "
-                    f"({round(Web3.from_wei(old_tip, 'gwei'), 4)} gwei) will exceed "
-                    f"spending cap factor {self.max_tip_factor} over suggested tip "
+                    f"to {round(Web3.from_wei(new_tip, 'gwei'), 4)} gwei will exceed "
+                    f"spending cap factor {self.max_tip_factor}x over suggested tip "
                     f"({round(Web3.from_wei(suggested_tip, 'gwei'), 4)} gwei); "
                     f"don't speed up"
                 )
                 return None
 
-            tip_increase = round(Web3.from_wei(new_tip - old_tip, "gwei"), 4)
-            fee_increase = round(Web3.from_wei(new_max_fee - old_max_fee, "gwei"), 4)
+            tip_increase_message = (
+                f"(~+{round(Web3.from_wei(new_tip - old_tip, 'gwei'), 4)} gwei) {old_tip}"
+                if old_tip
+                else "undefined"
+            )
+            fee_increase_message = (
+                f"(~+{round(Web3.from_wei(new_max_fee - old_max_fee, 'gwei'), 4)} gwei) {old_max_fee}"
+                if old_max_fee
+                else "undefined"
+            )
             log.info(
                 f"[speedup] Speeding up transaction #atx-{pending.id} (nonce=#{params['nonce']}) \n"
-                f"{self._MAX_PRIORITY_FEE_PER_GAS_FIELD} (~+{tip_increase} gwei) {old_tip} -> {new_tip} \n"
-                f"{self._MAX_FEE_PER_GAS_FIELD} (~+{fee_increase} gwei) {old_max_fee} -> {new_max_fee}"
+                f"{self._MAX_PRIORITY_FEE_PER_GAS_FIELD} {tip_increase_message} -> {new_tip} \n"
+                f"{self._MAX_FEE_PER_GAS_FIELD} {fee_increase_message} -> {new_max_fee}"
             )
             params = dict(params)
             params[self._MAX_PRIORITY_FEE_PER_GAS_FIELD] = new_tip
