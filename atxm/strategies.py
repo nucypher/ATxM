@@ -248,6 +248,8 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
             suggested_tip, new_tip, new_max_fee = self._calculate_eip1559_speedup_fee(
                 params
             )
+
+            # TODO: is this the best way of setting a cap?
             if new_tip > (suggested_tip * self.max_tip_factor):
                 # nothing the strategy can do here - don't change the params
                 log.warn(
