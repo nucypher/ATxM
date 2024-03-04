@@ -180,12 +180,12 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
         _log_gas_weather(current_base_fee, suggested_tip)
 
         # default to 1 if not specified in tx
-        prior_max_priority_fee = params.get("maxPriorityFeePerGas", 0)
+        prior_max_priority_fee = params.get(self._MAX_PRIORITY_FEE_PER_GAS_FIELD, 0)
         updated_max_priority_fee = math.ceil(
             max(prior_max_priority_fee, suggested_tip) * self.speedup_factor
         )
 
-        current_max_fee_per_gas = params.get("maxFeePerGas")
+        current_max_fee_per_gas = params.get(self._MAX_FEE_PER_GAS_FIELD)
         if current_max_fee_per_gas:
             # already previously set, just increase by factor but ensure base fee hasn't
             # also increased. The defaults used by web3py for this value is already pretty
@@ -244,7 +244,7 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
             if new_tip > (suggested_tip * self.max_tip_factor):
                 # nothing the strategy can do here - don't change the params
                 log.warn(
-                    f"[speedup] Increasing pending transaction's maxPriorityFeePerGas "
+                    f"[speedup] Increasing pending transaction's {self._MAX_PRIORITY_FEE_PER_GAS_FIELD} "
                     f"to {round(Web3.from_wei(new_tip, 'gwei'), 4)} gwei will exceed "
                     f"spending cap factor {self.max_tip_factor}x over suggested tip "
                     f"({round(Web3.from_wei(suggested_tip, 'gwei'), 4)} gwei); "
