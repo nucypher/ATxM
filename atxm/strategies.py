@@ -189,7 +189,9 @@ class FixedRateSpeedUp(AsyncTxStrategy):
             # high so don't overdo the multiplication factor.
             updated_max_fee_per_gas = math.ceil(
                 max(
+                    # last attempt param
                     current_max_fee_per_gas * self.speedup_factor,
+                    # OR take current conditions and speedup
                     (current_base_fee * self.speedup_factor) + updated_max_priority_fee,
                 )
             )
@@ -202,7 +204,9 @@ class FixedRateSpeedUp(AsyncTxStrategy):
         return suggested_tip, updated_max_priority_fee, updated_max_fee_per_gas
 
     def _calculate_legacy_speedup_fee(self, params: TxParams) -> int:
-        generated_gas_price = self.w3.eth.generate_gas_price(params) or 0
+        generated_gas_price = (
+            self.w3.eth.generate_gas_price(params) or 0
+        )  # 0 means no gas strategy
         old_gas_price = params[self._GAS_PRICE_FIELD]
 
         base_price_to_increase = old_gas_price
