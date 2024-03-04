@@ -65,7 +65,6 @@ Hooks are fired in a dedicated thread for lifecycle events.
 
 - `on_broadcast`: When a transaction is broadcasted.
 - `on_finalized`: When a transaction is finalized.
-- `on_pause`: When a transaction is halted by the strategy.
 - `on_fault`: When a transaction reverted or another error occurred.
 
 

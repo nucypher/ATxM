@@ -15,7 +15,7 @@ from atxm.exceptions import (
     TransactionFault,
     Fault,
 )
-from atxm.tacker import _TxTracker
+from atxm.tracker import _TxTracker
 from atxm.strategies import (
     AsyncTxStrategy,
     InsufficientFundsPause,
@@ -48,25 +48,32 @@ class _Machine(StateMachine):
     #
     # State Machine:
     #
-    #   Idle <---> Busy <---> Paused
-    #   | ^        | ^         | ^
-    #   V |        V |         V |
-    #    _          _           _
+    #       Pause
+    #      ^      ^
+    #     /        \
+    #    V         v
+    #   Idle <---> Busy
+    #   | ^        | ^
+    #   V |        V |
+    #    _          _
     #
     _BUSY = State("Busy")
     _IDLE = State("Idle", initial=True)
     _PAUSED = State("Paused")
 
     # - State Transitions -
-    _transition_to_idle = _BUSY.to(_IDLE, unless="_busy")  # Busy -> Idle
-    _transition_to_paused = _BUSY.to(_PAUSED, cond="_pause")  # Busy -> Pause
+    _transition_to_paused = _BUSY.to(_PAUSED, cond="_pause") | _IDLE.to(
+        _PAUSED, cond="_pause"
+    )  # Busy/Idle -> Pause
+    _transition_to_idle = _BUSY.to(_IDLE, unless=["_busy", "_pause"]) | _PAUSED.to(
+        _IDLE, unless=["_busy", "_pause"]
+    )  # Busy/Paused -> Idle
     _transition_to_busy = _IDLE.to(_BUSY, cond="_busy") | _PAUSED.to(
         _BUSY, unless="_pause"
     )  # Idle/Pause -> Busy
     # self transitions i.e. remain in same state
     _remain_busy = _BUSY.to.itself(cond="_busy", unless="_pause")
-    _remain_idle = _IDLE.to.itself(unless="_busy")
-    _remain_paused = _PAUSED.to.itself(cond="_pause")
+    _remain_idle = _IDLE.to.itself(unless=["_busy", "_pause"])
 
     _cycle_state = (
         _transition_to_idle
@@ -74,7 +81,6 @@ class _Machine(StateMachine):
         | _transition_to_busy
         | _remain_busy
         | _remain_idle
-        | _remain_paused
     )
 
     # internal
@@ -157,30 +163,17 @@ class _Machine(StateMachine):
     @_transition_to_paused.before
     def _enter_pause_mode(self):
         self.log.info("[pause] pause mode activated")
-        return
 
     @_PAUSED.enter
     def _process_paused(self):
-        # TODO what action should be taken to check if we leave the pause state?
-        #  Perhaps a call to self.__strategize()
-        return
+        self._sleep()
 
-    @_IDLE.enter
-    def _process_idle(self):
-        """Return to idle mode if not already there (slow down)"""
-        if self._task.interval != self._IDLE_INTERVAL:
-            # TODO does changing the interval value actually update the LoopingCall?
-            self._task.interval = self._IDLE_INTERVAL
-            self.log.info(
-                f"[done] returning to idle mode with "
-                f"{self._task.interval} second interval"
-            )
-
-            # TODO
-            #  1. don't always sleep (idle for some number of cycles?)
-            #  2. careful sleeping - potential concurrency concerns
-            #  3. there is currently no difference between sleep/idle ...
-            self._sleep()
+    @_transition_to_idle.before
+    def _enter_idle_mode(self):
+        self._task.interval = self._IDLE_INTERVAL
+        self.log.info(
+            f"[idle] returning to idle mode with {self._task.interval} second interval"
+        )
 
     @_transition_to_busy.before
     def _enter_busy_mode(self):
@@ -191,7 +184,7 @@ class _Machine(StateMachine):
         self._task.interval = max(
             round(average_block_time * self._BLOCK_INTERVAL), self._MIN_INTERVAL
         )
-        self.log.info(f"[working] cycle interval is {self._task.interval} seconds")
+        self.log.info(f"[working] cycle interval is now {self._task.interval} seconds")
 
     @_BUSY.enter
     def _process_busy(self):
@@ -234,9 +227,14 @@ class _Machine(StateMachine):
             self._task.stop()
 
     def _wake(self) -> None:
-        if not self._task.running:
-            log.info("[wake] waking up")
-            self._start(now=True)
+        """Runs the looping call immediately."""
+        log.info("[wake] running looping call now.")
+        if self._task.running:
+            # TODO instead of stopping/starting, can you set interval to 0
+            #  and call reset to have looping call immediately?
+            self._stop()
+
+        self._start(now=True)
 
     def _sleep(self) -> None:
         if self._task.running:
@@ -328,19 +326,6 @@ class _Machine(StateMachine):
             fire_hook(hook=tx.on_broadcast, tx=pending_tx)
         return pending_tx
 
-    def pause(self) -> None:
-        self._pause = True
-        self.log.warn(
-            f"[pause] pending transaction {self._tx_tracker.pending.txhash.hex()} has been paused."
-        )
-        hook = self._tx_tracker.pending.on_pause
-        if hook:
-            fire_hook(hook=hook, tx=self._tx_tracker.pending)
-
-    def resume(self) -> None:
-        self.log.info("[pause] pause lifted by strategy")
-        self._pause = False  # resume
-
     def __strategize(self) -> Optional[PendingTx]:
         """Retry the currently tracked pending transaction with the configured strategy."""
         if not self._tx_tracker.pending:
@@ -351,8 +336,7 @@ class _Machine(StateMachine):
             try:
                 params = strategy.execute(pending=_active_copy)
             except Wait as e:
-                log.info(f"[pause] strategy {strategy.__class__} signalled pause: {e}")
-                self.pause()
+                log.info(f"[wait] strategy {strategy.__class__} signalled wait: {e}")
                 return
             except TransactionFault as e:
                 self._tx_tracker.fault(
@@ -365,9 +349,6 @@ class _Machine(StateMachine):
                 # in case the strategy accidentally returns None
                 # keep the parameters as they are.
                 _active_copy.params.update(params)
-
-            if self._pause:
-                self.resume()
 
         # (!) retry the transaction with the new parameters
         retry_params = TxParams(_active_copy.params)
@@ -417,3 +398,43 @@ class _Machine(StateMachine):
             self.log.info(
                 f"[monitor] transaction {tx.txhash.hex()} has {confirmations} confirmations"
             )
+
+    #
+    # Exposed functions
+    #
+    def pause(self) -> None:
+        """
+        Pause the machine's tx processing loop; no txs are processed until unpaused (resume()).
+        """
+        if not self._pause:
+            self._pause = True
+            self.log.info("[pause] pause mode requested")
+            self._cycle_state()  # force a move to PAUSED state (don't wait for next iteration)
+
+    def resume(self) -> None:
+        """Unpauses (resumes) the machine's tx processing loop."""
+        if self._pause:
+            self._pause = False
+            self.log.info("[pause] pause mode deactivated")
+            self._wake()
+
+    def queue_transaction(
+        self, params: TxParams, signer: LocalAccount, *args, **kwargs
+    ) -> FutureTx:
+        """
+        Queue a new transaction for broadcast and subsequent tracking.
+        Optionally provide a dictionary of additional string data
+        to log during the transaction's lifecycle for identification.
+        """
+        previously_busy_or_paused = self._busy or self._pause
+
+        if signer.address not in self.signers:
+            self.signers[signer.address] = signer
+
+        tx = self._tx_tracker._queue(
+            _from=signer.address, params=params, *args, **kwargs
+        )
+        if not previously_busy_or_paused:
+            self._wake()
+
+        return tx

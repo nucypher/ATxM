@@ -4,7 +4,15 @@ from atxm.tx import FutureTx
 
 
 @pytest_twisted.inlineCallbacks
-def test_machine(account, w3, legacy_transaction, eip1559_transaction, machine, clock):
+def test_machine(
+    account,
+    w3,
+    legacy_transaction,
+    eip1559_transaction,
+    machine,
+    clock,
+    mock_wake_sleep,
+):
     assert not machine.busy
     async_txs = machine.queue_transactions(
         params=[legacy_transaction, eip1559_transaction],

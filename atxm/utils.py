@@ -71,7 +71,7 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
         # If it is equals 0 the transaction was reverted by EVM.
         # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
         log.warn(
-            f"Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
+            f"[reverted] Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
         )
         raise TransactionReverted(receipt)
 
@@ -159,4 +159,7 @@ def _make_tx_params(data: TxData) -> TxParams:
         params["type"] = "0x02"
         params["maxFeePerGas"] = data["maxFeePerGas"]
         params["maxPriorityFeePerGas"] = data["maxPriorityFeePerGas"]
+    else:
+        raise ValueError(f"unrecognized tx data: {data}")
+
     return params

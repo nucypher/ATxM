@@ -64,7 +64,9 @@ def machine(w3):
     clock = Clock()
     _machine = AutomaticTxMachine(w3=w3)
     _machine._task.clock = clock
-    return _machine
+    yield _machine
+
+    _machine.stop()
 
 
 @pytest.fixture
@@ -77,7 +79,7 @@ def interval(machine):
     return 1
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_wake_sleep(machine, mocker):
     wake = mocker.patch.object(machine, "_wake")
     sleep = mocker.patch.object(machine, "_sleep")
