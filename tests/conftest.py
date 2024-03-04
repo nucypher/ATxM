@@ -28,6 +28,7 @@ def legacy_transaction(account, w3):
     params = {
         "chainId": 1337,
         "nonce": 0,
+        "from": account.address,
         "to": account.address,
         "value": 0,
         "gas": 21000,
@@ -44,6 +45,7 @@ def eip1559_transaction(account, w3):
     params = {
         "chainId": 1337,
         "nonce": 0,
+        "from": account.address,
         "to": account.address,
         "value": 0,
         "gas": 21000,
