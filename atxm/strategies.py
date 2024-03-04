@@ -1,5 +1,5 @@
-import time
 from abc import ABC
+from datetime import datetime, timedelta
 from typing import Tuple, Optional
 
 from web3 import Web3
@@ -84,11 +84,14 @@ class InsufficientFundsPause(AsyncTxStrategy):
         return pending.params
 
 
-class TimeoutPause(AsyncTxStrategy):
-    """Pause strategy for pending transactions."""
+class TimeoutStrategy(AsyncTxStrategy):
+    """Timeout strategy for pending transactions."""
 
     _NAME = "timeout"
+
     _TIMEOUT = 60 * 60  # 1 hour in seconds
+
+    _WARN_FACTOR = 0.05  # 10% of timeout remaining
 
     def __init__(self, w3: Web3, timeout: Optional[int] = None):
         super().__init__(w3)
@@ -96,34 +99,38 @@ class TimeoutPause(AsyncTxStrategy):
 
     def __active_timed_out(self, pending: PendingTx) -> bool:
         """Returns True if the active transaction has timed out."""
-        if not pending:
-            return False
-        timeout = (time.time() - pending.created) > self.timeout
-        if timeout:
+        # seconds specificity (ignore microseconds)
+        now = datetime.now().replace(microsecond=0)
+        creation_time = datetime.fromtimestamp(pending.created).replace(microsecond=0)
+
+        elapsed_time = now - creation_time
+        if elapsed_time.seconds > self.timeout:
             return True
 
-        time_remaining = round(self.timeout - (time.time() - pending.created))
-        minutes = round(time_remaining / 60)
-        remainder_seconds = time_remaining % 60
-        end_time = time.time() + time_remaining
-        human_end_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
-        if time_remaining < (60 * 2):
+        end_time = creation_time + timedelta(seconds=self.timeout)
+        time_remaining = end_time - now
+        human_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S")
+        if time_remaining.seconds < (self.timeout * self._WARN_FACTOR):
             self.log.warn(
-                f"[timeout] Transaction {pending.txhash.hex()} will timeout in "
-                f"{minutes}m{remainder_seconds}s at {human_end_time}"
+                f"[pending_timeout] Transaction {pending.txhash.hex()} will timeout in "
+                f"{time_remaining} at {human_end_time}"
             )
         else:
             self.log.info(
-                f"[pending] {pending.txhash.hex()} \n"
-                f"[pending] {round(time.time() - pending.created)}s Elapsed | "
-                f"{minutes}m{remainder_seconds}s Remaining | "
+                f"[pending] {pending.txhash.hex()} "
+                f"{elapsed_time.seconds}s Elapsed | "
+                f"{time_remaining} Remaining | "
                 f"Timeout at {human_end_time}"
             )
         return False
 
     def execute(self, pending: PendingTx) -> TxParams:
-        timeout = self.__active_timed_out(pending)
-        if timeout:
+        if not pending:
+            # should never get here
+            raise RuntimeError("pending tx should not be None")
+
+        timedout = self.__active_timed_out(pending)
+        if timedout:
             raise TransactionFaulted(
                 tx=pending,
                 fault=Fault.TIMEOUT,

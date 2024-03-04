@@ -14,7 +14,7 @@ from atxm.strategies import (
     AsyncTxStrategy,
     FixedRateSpeedUp,
     InsufficientFundsPause,
-    TimeoutPause,
+    TimeoutStrategy,
 )
 from atxm.tracker import _TxTracker
 from atxm.tx import (
@@ -91,7 +91,7 @@ class _Machine(StateMachine):
 
     STRATEGIES: List[Type[AsyncTxStrategy]] = [
         InsufficientFundsPause,
-        TimeoutPause,
+        TimeoutStrategy,
         FixedRateSpeedUp,
     ]
 
