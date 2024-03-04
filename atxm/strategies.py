@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
 from web3 import Web3
-from web3.types import Gwei, PendingTx, TxParams
+from web3.types import PendingTx, TxParams
 
 from atxm.exceptions import (
     Fault,
@@ -142,10 +142,9 @@ class TimeoutStrategy(AsyncTxStrategy):
 class FixedRateSpeedUp(AsyncTxStrategy):
     """Speedup strategy for pending transactions."""
 
-    _SPEEDUP_INCREASE = 0.125  # 12.5%
+    _SPEEDUP_INCREASE_PERCENTAGE = 0.125  # 12.5%
 
-    # TODO: is this chain dependent?
-    _MAX_TIP = Gwei(1)  # gwei maxPriorityFeePerGas per transaction
+    _MAX_TIP_FACTOR = 3  # max 3x over suggested tip
 
     _NAME = "speedup"
 
@@ -156,38 +155,51 @@ class FixedRateSpeedUp(AsyncTxStrategy):
     def __init__(
         self,
         w3: Web3,
-        speedup_percentage: float = _SPEEDUP_INCREASE,
-        max_tip: Gwei = _MAX_TIP,
+        speedup_increase_percentage: float = _SPEEDUP_INCREASE_PERCENTAGE,
+        max_tip_factor: int = _MAX_TIP_FACTOR,
     ):
         super().__init__(w3)
 
-        if speedup_percentage >= 1 or speedup_percentage <= 0.10:
+        if speedup_increase_percentage > 1 or speedup_increase_percentage < 0.10:
             raise ValueError(
-                f"Invalid speedup increase percentage - {speedup_percentage}"
+                f"Invalid speedup increase percentage {speedup_increase_percentage}; "
+                f"must be in range [0.10, 1]"
             )
-        if max_tip <= 0:
-            raise ValueError(f"Invalid max tip - {max_tip}")
+        if max_tip_factor <= 1:
+            raise ValueError(f"Invalid max tip factor {max_tip_factor}; must be > 1")
 
-        self.speedup_factor = 1 + speedup_percentage
-        self.max_tip = max_tip
+        self.speedup_factor = 1 + speedup_increase_percentage
+        self.max_tip_factor = max_tip_factor
 
-    def _calculate_eip1559_speedup_fee(self, params: TxParams) -> Tuple[int, int]:
+    def _calculate_eip1559_speedup_fee(self, params: TxParams) -> Tuple[int, int, int]:
         current_base_fee = self.w3.eth.get_block("latest")["baseFeePerGas"]
         suggested_tip = self.w3.eth.max_priority_fee
         _log_gas_weather(current_base_fee, suggested_tip)
 
         # default to 1 if not specified in tx
-        prior_max_priority_fee = params.get("maxPriorityFeePerGas", 1)
+        prior_max_priority_fee = params.get("maxPriorityFeePerGas", 0)
         updated_max_priority_fee = math.ceil(
             max(prior_max_priority_fee, suggested_tip) * self.speedup_factor
         )
-        updated_max_fee_per_gas = math.ceil(
-            max(
-                params.get("maxFeePerGas", 0) * self.speedup_factor,
-                (current_base_fee * 2) + updated_max_priority_fee,
+
+        current_max_fee_per_gas = params.get("maxFeePerGas")
+        if current_max_fee_per_gas:
+            # already previously set, just increase by factor but ensure base fee hasn't
+            # also increased. The defaults used by web3py for this value is already pretty
+            # high so don't overdo the multiplication factor.
+            updated_max_fee_per_gas = math.ceil(
+                max(
+                    current_max_fee_per_gas * self.speedup_factor,
+                    (current_base_fee * self.speedup_factor) + updated_max_priority_fee,
+                )
             )
-        )
-        return updated_max_priority_fee, updated_max_fee_per_gas
+        else:
+            # not previously set, set to same default as web3py (transactions.py)
+            updated_max_fee_per_gas = math.ceil(
+                updated_max_priority_fee + (current_base_fee * 2)
+            )
+
+        return suggested_tip, updated_max_priority_fee, updated_max_fee_per_gas
 
     def _calculate_legacy_speedup_fee(self, params: TxParams) -> int:
         generated_gas_price = self.w3.eth.generate_gas_price(params)
@@ -216,11 +228,17 @@ class FixedRateSpeedUp(AsyncTxStrategy):
                 params[self._MAX_PRIORITY_FEE_PER_GAS_FIELD],
                 params[self._MAX_FEE_PER_GAS_FIELD],
             )
-            new_tip, new_max_fee = self._calculate_eip1559_speedup_fee(params)
-            if new_tip > self.max_tip:
+            suggested_tip, new_tip, new_max_fee = self._calculate_eip1559_speedup_fee(
+                params
+            )
+            if new_tip > (suggested_tip * self.max_tip_factor):
                 # nothing the strategy can do here - don't change the params
                 log.warn(
-                    f"[speedup] Pending transaction's maxPriorityFeePerGas exceeds spending cap {self.max_tip}; can't speed up any faster"
+                    f"[speedup] Increasing pending transaction's maxPriorityFeePerGas "
+                    f"({round(Web3.from_wei(old_tip, 'gwei'), 4)} gwei) will exceed "
+                    f"spending cap factor {self.max_tip_factor} over suggested tip "
+                    f"({round(Web3.from_wei(suggested_tip, 'gwei'), 4)} gwei); "
+                    f"don't speed up"
                 )
                 return None
 

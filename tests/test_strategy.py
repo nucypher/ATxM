@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 from hexbytes import HexBytes
 from twisted.logger import LogLevel, globalLogPublisher
-from web3.types import Gwei, TxParams
+from web3.types import TxParams
 
 from atxm.exceptions import Fault, TransactionFaulted
 from atxm.strategies import FixedRateSpeedUp, TimeoutStrategy
@@ -76,13 +76,14 @@ def test_timeout_strategy(w3, mocker):
 
 def test_speedup_strategy(w3, eip1559_transaction, mocker):
     # invalid increase percentage
-    for speedup_perc in [-1, -0.24, 0, 1, 1.01, 1.1]:
+    for speedup_perc in [-1, -0.24, 0, 1.01, 1.1]:
         with pytest.raises(ValueError):
-            _ = FixedRateSpeedUp(w3=w3, speedup_percentage=speedup_perc)
+            _ = FixedRateSpeedUp(w3=w3, speedup_increase_percentage=speedup_perc)
 
     # invalid max tip
-    with pytest.raises(ValueError):
-        _ = FixedRateSpeedUp(w3=w3, max_tip=Gwei(0))
+    for max_tip in [-1, 0, 0.5, 0.9, 1]:
+        with pytest.raises(ValueError):
+            _ = FixedRateSpeedUp(w3=w3, max_tip_factor=max_tip)
 
     speedup_strategy = FixedRateSpeedUp(w3)
     assert speedup_strategy.name == "speedup"
