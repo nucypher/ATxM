@@ -1,3 +1,6 @@
+import pytest_twisted
+from twisted.internet import reactor
+from twisted.internet.task import deferLater
 from web3.exceptions import TransactionNotFound
 from web3.types import TxReceipt
 
@@ -26,10 +29,14 @@ def _broadcast_tx(machine, eip1559_transaction, account, mocker):
     return atx, fault_hook
 
 
+@pytest_twisted.inlineCallbacks
 def _verify_tx_faulted(machine, atx, fault_hook, expected_fault: Fault):
-    while fault_hook.call_count == 0:
-        # ensure tx processed
-        machine._cycle()
+    machine._cycle()
+
+    # ensure hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert fault_hook.call_count == 1
+    fault_hook.assert_called_with(atx)
 
     assert atx.final is False
     assert isinstance(atx, FaultedTx)
@@ -41,9 +48,6 @@ def _verify_tx_faulted(machine, atx, fault_hook, expected_fault: Fault):
 
     assert machine.pending is None
     assert atx.final is False
-
-    assert fault_hook.call_count == 1
-    fault_hook.assert_called_with(atx)
 
 
 def test_revert(
