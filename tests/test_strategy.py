@@ -112,8 +112,6 @@ def test_speedup_strategy_legacy_tx(w3, legacy_transaction, mocker):
     )
     assert speedup_strategy.name == "speedup"
 
-    transaction_count = legacy_transaction["nonce"]
-    mocker.patch.object(w3.eth, "get_transaction_count", return_value=transaction_count)
     pending_tx = mocker.Mock(spec=PendingTx)
     pending_tx.id = 1
 

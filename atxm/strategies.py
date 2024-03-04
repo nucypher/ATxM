@@ -260,11 +260,5 @@ class FixedRateSpeedUp(AsyncTxStrategy):
             params[self._MAX_PRIORITY_FEE_PER_GAS_FIELD] = new_tip
             params[self._MAX_FEE_PER_GAS_FIELD] = new_max_fee
 
-        latest_nonce = self.w3.eth.get_transaction_count(params["from"], "latest")
-        pending_nonce = self.w3.eth.get_transaction_count(params["from"], "pending")
-        if pending_nonce - latest_nonce > 0:
-            log.warn("Overriding pending transaction!")
-
-        params["nonce"] = latest_nonce
         params = TxParams(params)
         return params
