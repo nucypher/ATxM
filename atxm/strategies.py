@@ -139,8 +139,11 @@ class TimeoutStrategy(AsyncTxStrategy):
         return None
 
 
-class FixedRateSpeedUp(AsyncTxStrategy):
-    """Speedup strategy for pending transactions."""
+class ExponentialSpeedupStrategy(AsyncTxStrategy):
+    """
+    Speedup strategy for pending transactions that increases fees by a
+    percentage over the prior value every time it is used.
+    """
 
     _SPEEDUP_INCREASE_PERCENTAGE = 0.125  # 12.5%
 

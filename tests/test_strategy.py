@@ -9,7 +9,7 @@ from twisted.logger import LogLevel, globalLogPublisher
 from web3.types import TxParams
 
 from atxm.exceptions import Fault, TransactionFaulted
-from atxm.strategies import FixedRateSpeedUp, TimeoutStrategy
+from atxm.strategies import ExponentialSpeedupStrategy, TimeoutStrategy
 from atxm.tx import PendingTx
 
 
@@ -81,24 +81,26 @@ def test_speedup_strategy_constructor(w3):
     # invalid increase percentage
     for speedup_perc in [-1, -0.24, 0, 1.01, 1.1]:
         with pytest.raises(ValueError):
-            _ = FixedRateSpeedUp(w3=w3, speedup_increase_percentage=speedup_perc)
+            _ = ExponentialSpeedupStrategy(
+                w3=w3, speedup_increase_percentage=speedup_perc
+            )
 
     # invalid max tip
     for max_tip in [-1, 0, 0.5, 0.9, 1]:
         with pytest.raises(ValueError):
-            _ = FixedRateSpeedUp(w3=w3, max_tip_factor=max_tip)
+            _ = ExponentialSpeedupStrategy(w3=w3, max_tip_factor=max_tip)
 
     # defaults
-    speedup_strategy = FixedRateSpeedUp(w3=w3)
+    speedup_strategy = ExponentialSpeedupStrategy(w3=w3)
     assert speedup_strategy.speedup_factor == (
-        1 + FixedRateSpeedUp._SPEEDUP_INCREASE_PERCENTAGE
+        1 + ExponentialSpeedupStrategy._SPEEDUP_INCREASE_PERCENTAGE
     )
-    assert speedup_strategy.max_tip_factor == FixedRateSpeedUp._MAX_TIP_FACTOR
+    assert speedup_strategy.max_tip_factor == ExponentialSpeedupStrategy._MAX_TIP_FACTOR
 
     # other values
     speedup_increase = 0.223
     max_tip_factor = 4
-    speedup_strategy = FixedRateSpeedUp(
+    speedup_strategy = ExponentialSpeedupStrategy(
         w3=w3,
         speedup_increase_percentage=speedup_increase,
         max_tip_factor=max_tip_factor,
@@ -111,7 +113,7 @@ def test_speedup_strategy_constructor(w3):
 
 def test_speedup_strategy_legacy_tx(w3, legacy_transaction, mocker):
     speedup_percentage = 0.112  # 11.2%
-    speedup_strategy = FixedRateSpeedUp(
+    speedup_strategy = ExponentialSpeedupStrategy(
         w3, speedup_increase_percentage=speedup_percentage
     )
 
@@ -386,7 +388,7 @@ def test_speedup_strategy_eip1559_tx_hit_max_tip(w3, eip1559_transaction, mocker
 def eip1559_setup(mocker, w3):
     speedup_percentage = round(random.randint(110, 230) / 1000, 3)  # [11%, 23%]
     max_tip_factor = random.randint(2, 5)
-    speedup_strategy = FixedRateSpeedUp(
+    speedup_strategy = ExponentialSpeedupStrategy(
         w3,
         speedup_increase_percentage=speedup_percentage,
         max_tip_factor=max_tip_factor,

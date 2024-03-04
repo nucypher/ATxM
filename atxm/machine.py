@@ -12,7 +12,7 @@ from web3.types import TxParams
 from atxm.exceptions import TransactionFaulted, TransactionReverted
 from atxm.strategies import (
     AsyncTxStrategy,
-    FixedRateSpeedUp,
+    ExponentialSpeedupStrategy,
     InsufficientFundsPause,
     TimeoutStrategy,
 )
@@ -92,7 +92,7 @@ class _Machine(StateMachine):
     STRATEGIES: List[Type[AsyncTxStrategy]] = [
         InsufficientFundsPause,
         TimeoutStrategy,
-        FixedRateSpeedUp,
+        ExponentialSpeedupStrategy,
     ]
 
     class LogObserver:
