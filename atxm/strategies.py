@@ -91,7 +91,7 @@ class TimeoutStrategy(AsyncTxStrategy):
 
     _TIMEOUT = 60 * 60  # 1 hour in seconds
 
-    _WARN_FACTOR = 0.05  # 10% of timeout remaining
+    _WARN_FACTOR = 0.05  # 5% of timeout remaining
 
     def __init__(self, w3: Web3, timeout: Optional[int] = None):
         super().__init__(w3)
