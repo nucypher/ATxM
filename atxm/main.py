@@ -9,7 +9,6 @@ from atxm.tx import (
     FinalizedTx,
     FutureTx,
     PendingTx,
-    AsyncTx,
 )
 
 
@@ -51,11 +50,6 @@ class AutomaticTxMachine(_Machine):
     def finalized(self) -> Set[FinalizedTx]:
         """Return a set of finalized transactions."""
         return set(self._tx_tracker.finalized)
-
-    @property
-    def faults(self) -> List[AsyncTx]:
-        """Return a set of faulted transactions."""
-        return list(self._tx_tracker.faulty)
 
     def queue_transactions(
         self, params: List[TxParams], signer: LocalAccount, *args, **kwargs

@@ -6,9 +6,9 @@ from web3 import Web3
 from web3.types import Gwei, TxParams, Wei, PendingTx
 
 from atxm.exceptions import (
-    Wait,
-    TransactionFault,
     Fault,
+    Wait,
+    TransactionFaulted,
 )
 from atxm.logging import log
 from atxm.utils import (
@@ -74,11 +74,10 @@ class InsufficientFundsPause(AsyncTxStrategy):
             self.log.warn(
                 f"Insufficient funds for transaction #{pending.params['nonce']}"
             )
-            raise TransactionFault(
+            raise TransactionFaulted(
                 tx=pending,
                 fault=Fault.INSUFFICIENT_FUNDS,
                 message="Insufficient funds",
-                clear=False,
             )
         # log.warn(f"Insufficient funds for transaction #{pending.params['nonce']}")
         # raise Wait("Insufficient funds")
@@ -125,11 +124,10 @@ class TimeoutPause(AsyncTxStrategy):
     def execute(self, pending: PendingTx) -> TxParams:
         timeout = self.__active_timed_out(pending)
         if timeout:
-            raise TransactionFault(
+            raise TransactionFaulted(
                 tx=pending,
                 fault=Fault.TIMEOUT,
                 message="Transaction has timed out",
-                clear=True,  # signal to clear the active transaction
             )
         return pending.params
 

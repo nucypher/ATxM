@@ -1,6 +1,6 @@
 from enum import Enum
 
-from web3.types import RPCError
+from web3.types import PendingTx, RPCError, TxReceipt
 
 
 class Fault(Enum):
@@ -37,16 +37,19 @@ class Wait(Exception):
     """
 
 
-class TransactionFault(Exception):
-    """raised when a transaction has been faulted"""
+class TransactionFaulted(Exception):
+    """Raised when a transaction has been faulted."""
 
-    def __init__(self, tx, fault: Fault, clear: bool, message: str):
+    def __init__(self, tx: PendingTx, fault: Fault, message: str):
         self.tx = tx
         self.fault = fault
         self.message = message
-        self.clear = clear
         super().__init__(message)
 
 
-class TransactionReverted(Exception):
-    """raised when a transaction has been reverted"""
+class TransactionReverted(TransactionFaulted):
+    """Raised when a transaction has been reverted."""
+
+    def __init__(self, tx: PendingTx, receipt: TxReceipt, message: str):
+        self.receipt = receipt
+        super().__init__(tx=tx, fault=Fault.REVERT, message=message)

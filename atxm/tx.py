@@ -23,7 +23,7 @@ class AsyncTx(ABC):
     on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
         default=None, init=False
     )
-    on_fault: Optional[Callable] = field(default=None, init=False)
+    on_fault: Optional[Callable[["FaultedTx"], None]] = field(default=None, init=False)
 
     def __repr__(self):
         return f"<{self.__class__.__name__} id={self.id} final={self.final}>"
@@ -124,7 +124,7 @@ class FinalizedTx(AsyncTx):
 
 
 @dataclass
-class FaultyTx(AsyncTx):
+class FaultedTx(AsyncTx):
     final: bool = field(default=False, init=False)
     fault: Fault
     error: Optional[str] = None

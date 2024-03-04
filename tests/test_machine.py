@@ -349,7 +349,6 @@ def test_follow(
 
     assert len(machine.finalized) == 0
     assert len(machine.queued) == 0
-    assert len(machine.faults) == 0
     assert machine.pending is None
 
     assert not machine.busy
