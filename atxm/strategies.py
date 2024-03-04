@@ -202,15 +202,18 @@ class FixedRateSpeedUp(AsyncTxStrategy):
         return suggested_tip, updated_max_priority_fee, updated_max_fee_per_gas
 
     def _calculate_legacy_speedup_fee(self, params: TxParams) -> int:
-        generated_gas_price = self.w3.eth.generate_gas_price(params)
-        # increase prior value by speedup factor
-        minimum_gas_price = int(
-            math.ceil(params[self._GAS_PRICE_FIELD] * self.speedup_factor)
-        )
-        if generated_gas_price and generated_gas_price > minimum_gas_price:
-            return generated_gas_price
+        generated_gas_price = self.w3.eth.generate_gas_price(params) or 0
+        old_gas_price = params[self._GAS_PRICE_FIELD]
 
-        return minimum_gas_price
+        base_price_to_increase = old_gas_price
+        if generated_gas_price > old_gas_price:
+            log.info(
+                f"[speedup] increase gas price based on updated generated "
+                f"gas price value {generated_gas_price} vs prior value {old_gas_price}"
+            )
+            base_price_to_increase = generated_gas_price
+
+        return math.ceil(base_price_to_increase * self.speedup_factor)
 
     def execute(self, pending: PendingTx) -> Optional[TxParams]:
         params = pending.params
@@ -219,7 +222,7 @@ class FixedRateSpeedUp(AsyncTxStrategy):
             old_gas_price = params[self._GAS_PRICE_FIELD]
             new_gas_price = self._calculate_legacy_speedup_fee(pending.params)
             log.info(
-                f"[speedup] Speeding up legacy transaction #{params['nonce']} \n"
+                f"[speedup] Speeding up legacy transaction #atx-{pending.id} (nonce=#{params['nonce']}) \n"
                 f"gasPrice {old_gas_price} -> {new_gas_price}"
             )
             params[self._GAS_PRICE_FIELD] = new_gas_price
@@ -245,7 +248,7 @@ class FixedRateSpeedUp(AsyncTxStrategy):
             tip_increase = round(Web3.from_wei(new_tip - old_tip, "gwei"), 4)
             fee_increase = round(Web3.from_wei(new_max_fee - old_max_fee, "gwei"), 4)
             log.info(
-                f"[speedup] Speeding up transaction #{params['nonce']} \n"
+                f"[speedup] Speeding up transaction #atx-{pending.id} (nonce=#{params['nonce']}) \n"
                 f"{self._MAX_PRIORITY_FEE_PER_GAS_FIELD} (~+{tip_increase} gwei) {old_tip} -> {new_tip} \n"
                 f"{self._MAX_FEE_PER_GAS_FIELD} (~+{fee_increase} gwei) {old_max_fee} -> {new_max_fee}"
             )
