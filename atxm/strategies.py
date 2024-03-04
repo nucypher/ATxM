@@ -147,6 +147,8 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
 
     _SPEEDUP_INCREASE_PERCENTAGE = 0.125  # 12.5%
 
+    _MIN_SPEEDUP_INCREASE = 0.10  # mandated by eth standard
+
     _MAX_TIP_FACTOR = 3  # max 3x over suggested tip
 
     _NAME = "speedup"
@@ -163,7 +165,10 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
     ):
         super().__init__(w3)
 
-        if speedup_increase_percentage > 1 or speedup_increase_percentage < 0.10:
+        if (
+            speedup_increase_percentage < self._MIN_SPEEDUP_INCREASE
+            or speedup_increase_percentage > 1
+        ):
             raise ValueError(
                 f"Invalid speedup increase percentage {speedup_increase_percentage}; "
                 f"must be in range [0.10, 1]"
