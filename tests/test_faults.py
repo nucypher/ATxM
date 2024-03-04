@@ -83,6 +83,8 @@ def test_strategy_fault(
     w3, machine, clock, eip1559_transaction, account, interval, mock_wake_sleep, mocker
 ):
     faulty_strategy = mocker.Mock(spec=AsyncTxStrategy)
+
+    # TODO: consider whether strategies should just be overriden through the constructor
     machine._strategies.insert(0, faulty_strategy)  # add first
 
     atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
