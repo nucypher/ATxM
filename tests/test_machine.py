@@ -1,9 +1,12 @@
+import math
+
 import pytest
 
 import pytest_twisted
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
 
+from atxm.strategies import TimeoutStrategy
 from atxm.tx import FutureTx, PendingTx
 
 
@@ -362,6 +365,129 @@ def test_follow(
     assert machine.pending is None
 
     assert not machine.busy
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
+def test_use_strategies_speedup_used(
+    ethereum_tester,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
+):
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    old_max_fee = eip1559_transaction["maxFeePerGas"]
+    old_priority_fee = eip1559_transaction["maxPriorityFeePerGas"]
+
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.current_state == machine._BUSY
+
+    for i in range(2):
+        # advance 2 cycles
+        yield clock.advance(1)
+
+    while not machine.finalized:
+        yield ethereum_tester.mine_block()
+        yield clock.advance(1)
+
+    assert atx.final is True
+
+    # speed up strategy kicked in
+    assert atx.params["maxFeePerGas"] > old_max_fee
+    assert atx.params["maxPriorityFeePerGas"] > old_priority_fee
+
+    while len(machine.finalized) > 0:
+        yield ethereum_tester.mine_block()
+        yield clock.advance(1)
+
+    assert len(machine.finalized) == 0
+    assert len(machine.queued) == 0
+    assert machine.pending is None
+
+    assert not machine.busy
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
+def test_use_strategies_timeout_used(
+    ethereum_tester,
+    w3,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    # TODO consider whether this should just be provided to constructor - #23
+    fault_hook = mocker.Mock()
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    atx = machine.queue_transaction(
+        params=eip1559_transaction, signer=account, on_fault=fault_hook
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.current_state == machine._BUSY
+
+    # don't mine transaction at all; wait for hook to be called when timeout occurs
+
+    # need some cycles for strategies to kick in
+    num_cycles = 4
+    for i in range(num_cycles):
+        # reduce creation time by timeout to force timeout
+        atx.created -= math.ceil(TimeoutStrategy._TIMEOUT / (num_cycles - 1))
+        yield clock.advance(1)
+
+    # ensure switch back to IDLE
+    yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+
+    assert fault_hook.call_count == 1
+    fault_hook.assert_called_with(atx)
+
+    assert len(machine.queued) == 0
+    assert machine.pending is None
+
+    assert not machine.busy
+    assert not atx.final
 
     assert machine.current_state == machine._IDLE
 
