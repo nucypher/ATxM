@@ -236,7 +236,7 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
             old_gas_price = params[self._GAS_PRICE_FIELD]
             new_gas_price = self._calculate_legacy_speedup_fee(pending.params)
             log.info(
-                f"[speedup] Speeding up legacy transaction #atx-{pending.id} (nonce=#{params['nonce']}) \n"
+                f"[speedup] Speeding up legacy transaction #atx-{pending.id} (nonce={params['nonce']}) \n"
                 f"gasPrice {old_gas_price} -> {new_gas_price}"
             )
             params[self._GAS_PRICE_FIELD] = new_gas_price
@@ -272,7 +272,7 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
                 else "undefined"
             )
             log.info(
-                f"[speedup] Speeding up transaction #atx-{pending.id} (nonce=#{params['nonce']}) \n"
+                f"[speedup] Speeding up transaction #atx-{pending.id} (nonce={params['nonce']}) \n"
                 f"{self._MAX_PRIORITY_FEE_PER_GAS_FIELD} {tip_increase_message} -> {new_tip} \n"
                 f"{self._MAX_FEE_PER_GAS_FIELD} {fee_increase_message} -> {new_max_fee}"
             )
