@@ -197,6 +197,7 @@ def test_wake_no_call_after_queuing_when_already_paused(
 
 
 @pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
 def test_broadcast(
     clock,
     machine,
@@ -255,8 +256,9 @@ def test_broadcast(
 
 
 @pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
 def test_finalize(
-    chain,
+    ethereum_tester,
     clock,
     machine,
     state_observer,
@@ -290,7 +292,7 @@ def test_finalize(
 
     # advance to finalize the transaction
     while machine.pending:
-        yield chain.mine(1)
+        yield ethereum_tester.mine_block()
         yield clock.advance(1)
 
     # The transaction is no longer pending
@@ -321,8 +323,15 @@ def test_finalize(
 
 
 @pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
 def test_follow(
-    chain, machine, state_observer, clock, eip1559_transaction, account, mock_wake_sleep
+    ethereum_tester,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
 ):
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -339,12 +348,13 @@ def test_follow(
     assert machine.current_state == machine._BUSY
 
     while not machine.finalized:
+        yield ethereum_tester.mine_block()
         yield clock.advance(1)
 
     assert atx.final is True
 
     while len(machine.finalized) > 0:
-        yield chain.mine(1)
+        yield ethereum_tester.mine_block()
         yield clock.advance(1)
 
     assert len(machine.finalized) == 0
@@ -431,8 +441,9 @@ def test_pause_when_busy(clock, machine, eip1559_transaction, account, mocker):
     machine.stop()
 
 
+@pytest.mark.usefixtures("disable_auto_mining")
 def test_simple_state_transitions(
-    chain, machine, eip1559_transaction, account, mock_wake_sleep
+    ethereum_tester, machine, eip1559_transaction, account, mock_wake_sleep
 ):
     assert machine.current_state == machine._IDLE
 
@@ -468,6 +479,8 @@ def test_simple_state_transitions(
     assert machine.current_state == machine._BUSY
     assert machine.busy
 
+    ethereum_tester.mine_block()
+
     # busy -> pause
     machine.pause()
     assert machine.current_state == machine._PAUSED
@@ -481,9 +494,10 @@ def test_simple_state_transitions(
 
     # finalize tx
     while machine.busy:
-        chain.mine(1)
+        ethereum_tester.mine_block()
         machine._cycle()
 
+    ethereum_tester.mine_block()
     assert atx.final is True
 
     # transition to idle

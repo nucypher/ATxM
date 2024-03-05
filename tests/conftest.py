@@ -3,6 +3,7 @@ from typing import List, Tuple
 
 import pytest
 from eth_account import Account
+from eth_tester import EthereumTester
 from statemachine import State
 from twisted.internet.task import Clock
 from twisted.logger import globalLogPublisher, textFileLogObserver
@@ -28,7 +29,6 @@ def legacy_transaction(account, w3):
     params = {
         "chainId": 1337,
         "nonce": 0,
-        "from": account.address,
         "to": account.address,
         "value": 0,
         "gas": 21000,
@@ -45,7 +45,6 @@ def eip1559_transaction(account, w3):
     params = {
         "chainId": 1337,
         "nonce": 0,
-        "from": account.address,
         "to": account.address,
         "value": 0,
         "gas": 21000,
@@ -86,6 +85,18 @@ def mock_wake_sleep(machine, mocker):
     wake = mocker.patch.object(machine, "_wake")
     sleep = mocker.patch.object(machine, "_sleep")
     return wake, sleep
+
+
+@pytest.fixture
+def disable_auto_mining(ethereum_tester):
+    ethereum_tester.disable_auto_mine_transactions()
+    yield
+    ethereum_tester.enable_auto_mine_transactions()
+
+
+@pytest.fixture
+def ethereum_tester(w3) -> EthereumTester:
+    return w3.provider.ethereum_tester
 
 
 class StateObserver:
