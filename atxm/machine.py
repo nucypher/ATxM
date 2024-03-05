@@ -384,7 +384,7 @@ class _Machine(StateMachine):
                 if tx in self._tx_tracker.finalized:
                     self._tx_tracker.finalized.remove(tx)
                     self.log.info(
-                        f"[clear] stopped tracking {tx.txhash.hex()} after {confirmations} confirmations"
+                        f"[monitor] stopped tracking {tx.txhash.hex()} after {confirmations} confirmations"
                     )
                 continue
             self.log.info(
