@@ -6,7 +6,6 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, Deque, Dict, Optional, Set, Tuple
 
-from eth_typing import ChecksumAddress
 from web3.types import TxParams, TxReceipt
 
 from atxm.exceptions import TransactionFaulted
@@ -207,7 +206,6 @@ class _TxTracker:
     def _queue(
         self,
         params: TxParams,
-        _from: ChecksumAddress,
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
         on_finalized: Optional[Callable[[FinalizedTx], None]] = None,
@@ -215,7 +213,6 @@ class _TxTracker:
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
         tx = FutureTx(
-            _from=_from,
             id=self.__COUNTER,
             params=params,
             info=info,

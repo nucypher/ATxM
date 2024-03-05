@@ -70,7 +70,7 @@ class InsufficientFundsPause(AsyncTxStrategy):
     _NAME = "insufficient-funds"
 
     def execute(self, pending: PendingTx) -> Optional[TxParams]:
-        balance = self.w3.eth.get_balance(pending._from)
+        balance = self.w3.eth.get_balance(pending.params["from"])
         if balance == 0:
             self.log.warn(
                 f"Insufficient funds for transaction #{pending.params['nonce']}"

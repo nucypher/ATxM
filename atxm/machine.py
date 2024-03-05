@@ -18,8 +18,8 @@ from atxm.strategies import (
 )
 from atxm.tracker import _TxTracker
 from atxm.tx import (
+    AsyncTx,
     FutureTx,
-    PendingTx,
     TxHash,
 )
 from atxm.utils import (
@@ -240,7 +240,7 @@ class _Machine(StateMachine):
     # Lifecycle
     #
 
-    def __handle_active_transaction(self) -> bool:
+    def __handle_active_transaction(self) -> None:
         """
         Handles the currently tracked pending transaction.
 
@@ -262,7 +262,7 @@ class _Machine(StateMachine):
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted as e:
             self._tx_tracker.fault(fault_error=e)
-            return True
+            return
 
         # Outcome 3: pending transaction is finalized (final success)
         if receipt:
@@ -273,14 +273,13 @@ class _Machine(StateMachine):
                 f"with {confirmations} confirmation(s) txhash: {final_txhash.hex()}"
             )
             self._tx_tracker.finalize_active_tx(receipt=receipt)
-            return True
+            return
 
         # Outcome 4: re-strategize the pending transaction
-        pending_tx = self.__strategize()
-        return pending_tx is not None
+        self.__strategize()
 
     #
-    # Broadcast
+    # Broadcast tx
     #
 
     def __get_signer(self, address: str) -> LocalAccount:
@@ -290,7 +289,7 @@ class _Machine(StateMachine):
             raise ValueError(f"Signer {address} not found")
         return signer
 
-    def __fire(self, tx: FutureTx, msg: str) -> Optional[PendingTx]:
+    def __fire(self, tx: AsyncTx, msg: str) -> Optional[TxHash]:
         """
         Signs and broadcasts a transaction, handling RPC errors
         and internal state changes.
@@ -301,23 +300,16 @@ class _Machine(StateMachine):
         Morphs a `FutureTx` into a `PendingTx` and advances it
         into the active transaction slot if broadcast is successful.
         """
-        signer: LocalAccount = self.__get_signer(tx._from)
-        try:
-            txhash = self.w3.eth.send_raw_transaction(
-                signer.sign_transaction(tx.params).rawTransaction
-            )
-        except ValueError as e:
-            _handle_rpc_error(e, tx=tx)
-            return
+        signer: LocalAccount = self.__get_signer(tx.params["from"])
+        txhash = self.w3.eth.send_raw_transaction(
+            signer.sign_transaction(tx.params).rawTransaction
+        )
         self.log.info(
             f"[{msg}] fired transaction #atx-{tx.id}|{tx.params['nonce']}|{txhash.hex()}"
         )
-        pending_tx = self._tx_tracker.morph(tx=tx, txhash=txhash)
-        if tx.on_broadcast:
-            fire_hook(hook=tx.on_broadcast, tx=pending_tx)
-        return pending_tx
+        return txhash
 
-    def __strategize(self) -> Optional[PendingTx]:
+    def __strategize(self) -> None:
         """Retry the currently tracked pending transaction with the configured strategy."""
         if not self._tx_tracker.pending:
             raise RuntimeError("No active transaction to strategize")
@@ -343,20 +335,28 @@ class _Machine(StateMachine):
             return
 
         # (!) retry the transaction with the new parameters
-        retry_params = TxParams(_active_copy.params)
         _names = " -> ".join(s.name for s in self._strategies)
-        pending_tx = self.__fire(tx=retry_params, msg=_names)
+
+        # TODO try-except needed here (similar to broadcast) #14, #18, #20
+        txhash = self.__fire(tx=_active_copy, msg=_names)
+
+        _active_copy.txhash = txhash
+        self._tx_tracker.update_after_retry(_active_copy)
+
+        pending_tx = self._tx_tracker.pending
         self.log.info(f"[retry] transaction #{pending_tx.id} has been re-broadcasted")
+        if pending_tx.on_broadcast:
+            fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
 
-        return pending_tx
-
-    def __broadcast(self) -> Optional[TxHash]:
+    def __broadcast(self):
         """
         Attempts to broadcast the next `FutureTx` in the queue.
         If the broadcast is not successful, it is re-queued.
         """
         future_tx = self._tx_tracker._pop()  # popleft
         future_tx.params = _make_tx_params(future_tx.params)
+
+        # update nonce as necessary
         signer = self.__get_signer(future_tx._from)
         nonce = self.w3.eth.get_transaction_count(signer.address, "latest")
         if nonce > future_tx.params["nonce"]:
@@ -365,11 +365,19 @@ class _Machine(StateMachine):
                 f"by another transaction. Updating queued tx nonce {future_tx.params['nonce']} -> {nonce}"
             )
         future_tx.params["nonce"] = nonce
-        pending_tx = self.__fire(tx=future_tx, msg="broadcast")
-        if not pending_tx:
+
+        try:
+            txhash = self.__fire(tx=future_tx, msg="broadcast")
+        except ValueError as e:
+            _handle_rpc_error(e, tx=future_tx)
+            # TODO don't requeue forever #12, #20
             self._tx_tracker._requeue(future_tx)
             return
-        return pending_tx.txhash
+
+        self._tx_tracker.morph(tx=future_tx, txhash=txhash)
+        pending_tx = self._tx_tracker.pending
+        if pending_tx.on_broadcast:
+            fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
 
     #
     # Monitoring

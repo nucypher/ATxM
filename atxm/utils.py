@@ -13,7 +13,7 @@ from atxm.exceptions import (
     TransactionReverted,
 )
 from atxm.logging import log
-from atxm.tx import AsyncTx, FinalizedTx, FutureTx, PendingTx, TxHash
+from atxm.tx import AsyncTx, FinalizedTx, PendingTx, TxHash
 
 
 @memoize
@@ -116,7 +116,7 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
         log.info(f"[hook] fired hook {hook} for transaction #atx-{tx.id}")
 
 
-def _handle_rpc_error(e: Exception, tx: FutureTx) -> None:
+def _handle_rpc_error(e: Exception, tx: AsyncTx) -> None:
     try:
         error = RPCError(**e.args[0])
     except TypeError:
@@ -149,6 +149,7 @@ def _make_tx_params(data: TxData) -> TxParams:
             "nonce": data["nonce"],
             "chainId": data["chainId"],
             "gas": data["gas"],
+            "from": data["from"],
             "to": data["to"],
             "value": data["value"],
             "data": data.get("data", b""),
