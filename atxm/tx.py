@@ -15,6 +15,7 @@ TxHash = HexBytes
 @dataclass
 class AsyncTx(ABC):
     id: int
+    params: TxParams
     final: bool = field(default=None, init=False)
     fault: Optional[Fault] = field(default=None, init=False)
     on_broadcast: Optional[Callable[[PendingTx], None]] = field(
@@ -49,17 +50,18 @@ class AsyncTx(ABC):
 @dataclass
 class FutureTx(AsyncTx):
     final: bool = field(default=False, init=False)
-    params: TxParams
-    _from: ChecksumAddress
     info: Optional[Dict] = None
 
     def __hash__(self):
         return hash(self.id)
 
+    @property
+    def _from(self) -> ChecksumAddress:
+        return self.params["from"]
+
     def to_dict(self) -> Dict:
         return {
             "id": self.id,
-            "from": self._from,
             "params": _serialize_tx_params(self.params),
             "info": self.info,
         }
@@ -68,7 +70,6 @@ class FutureTx(AsyncTx):
     def from_dict(cls, data: Dict):
         return cls(
             id=int(data["id"]),
-            _from=data["from"],
             params=TxParams(data["params"]),
             info=dict(data["info"]),
         )

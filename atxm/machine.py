@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import copy, deepcopy
 from typing import List, Optional, Type
 
 from eth_account.signers.local import LocalAccount
@@ -423,9 +423,17 @@ class _Machine(StateMachine):
         if signer.address not in self.signers:
             self.signers[signer.address] = signer
 
-        tx = self._tx_tracker._queue(
-            _from=signer.address, params=params, *args, **kwargs
-        )
+        params_copy = copy(params)
+
+        from_param = params_copy.get("from")
+        if from_param is None:
+            params_copy["from"] = signer.address
+        if from_param and from_param != signer.address:
+            raise ValueError(
+                f"Mismatched 'from' value ({from_param}) and 'signer' account ({signer.address})"
+            )
+
+        tx = self._tx_tracker._queue(params=params_copy, *args, **kwargs)
         if not previously_busy_or_paused:
             self._wake()
 
