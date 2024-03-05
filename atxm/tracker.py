@@ -101,6 +101,17 @@ class _TxTracker:
             return
         log.debug(f"[tracker] tracked active transaction {tx.txhash.hex()}")
 
+    def update_after_retry(self, tx: PendingTx) -> PendingTx:
+        if tx.id != self.__active.id:
+            raise RuntimeError(
+                f"Trying to update unexpected active tx: from {self.__active.id} to {tx.id}"
+            )
+
+        self.__active.txhash = tx.txhash
+        self.__active.params = tx.params
+
+        return self.pending
+
     def morph(self, tx: FutureTx, txhash: TxHash) -> PendingTx:
         """
         Morphs a future transaction into a pending transaction.
