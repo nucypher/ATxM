@@ -1,6 +1,6 @@
 from enum import Enum
 
-from web3.types import PendingTx, RPCError, TxReceipt
+from web3.types import PendingTx, TxReceipt
 
 
 class Fault(Enum):
@@ -13,9 +13,6 @@ class Fault(Enum):
     # Strategy has been running for too long
     TIMEOUT = "timeout"
 
-    # Transaction has been capped and subsequently timed out
-    PAUSE = "pause"
-
     # Transaction reverted
     REVERT = "revert"
 
@@ -26,7 +23,7 @@ class Fault(Enum):
     INSUFFICIENT_FUNDS = "insufficient_funds"
 
 
-class InsufficientFunds(RPCError):
+class InsufficientFunds(Exception):
     """raised when a transaction exceeds the spending cap"""
 
 

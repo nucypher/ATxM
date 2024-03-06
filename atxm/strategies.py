@@ -64,26 +64,6 @@ class AsyncTxStrategy(ABC):
         raise NotImplementedError
 
 
-class InsufficientFundsPause(AsyncTxStrategy):
-    """Pause strategy for pending transactions."""
-
-    _NAME = "insufficient-funds"
-
-    def execute(self, pending: PendingTx) -> Optional[TxParams]:
-        balance = self.w3.eth.get_balance(pending.params["from"])
-        if balance == 0:
-            self.log.warn(
-                f"Insufficient funds for transaction #{pending.params['nonce']}"
-            )
-            raise TransactionFaulted(
-                tx=pending,
-                fault=Fault.INSUFFICIENT_FUNDS,
-                message="Insufficient funds",
-            )
-        # log.warn(f"Insufficient funds for transaction #{pending.params['nonce']}")
-        return None
-
-
 class TimeoutStrategy(AsyncTxStrategy):
     """Timeout strategy for pending transactions."""
 

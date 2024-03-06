@@ -20,7 +20,6 @@ from atxm.exceptions import (
 from atxm.strategies import (
     AsyncTxStrategy,
     ExponentialSpeedupStrategy,
-    InsufficientFundsPause,
     TimeoutStrategy,
 )
 from atxm.tracker import _TxTracker
@@ -97,7 +96,6 @@ class _Machine(StateMachine):
     _BLOCK_SAMPLE_SIZE = 10_000  # blocks
 
     STRATEGIES: List[Type[AsyncTxStrategy]] = [
-        InsufficientFundsPause,
         TimeoutStrategy,
         ExponentialSpeedupStrategy,
     ]
