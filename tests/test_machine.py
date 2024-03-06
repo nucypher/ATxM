@@ -4,11 +4,14 @@ import pytest
 
 import pytest_twisted
 from eth_account import Account
+from eth_utils import ValidationError
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
+from web3.exceptions import Web3Exception
 
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tx import FutureTx, PendingTx
+from atxm.utils import _is_recoverable_send_tx_error
 
 
 @pytest.fixture()
@@ -298,6 +301,71 @@ def test_broadcast(
 
     assert len(state_observer.transitions) == 1
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.parametrize(
+    "non_recoverable_error", [ValidationError, ValueError, Web3Exception]
+)
+def test_broadcast_non_recoverable_error(
+    non_recoverable_error,
+    clock,
+    w3,
+    machine,
+    state_observer,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    wake, _ = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    # Queue a transaction
+    broadcast_failure_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast_failure=broadcast_failure_hook,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1
+
+    # There is one queued transaction
+    assert len(machine.queued) == 1
+
+    # make firing of transaction fail
+    error = non_recoverable_error("non-recoverable error")
+    assert not _is_recoverable_send_tx_error(error)
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
+
+    machine.start(now=True)
+    yield clock.advance(1)
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_failure_hook.call_count == 1
+    broadcast_failure_hook.assert_called_with(atx, error)
+
+    # The transaction failed and is not requeued
+    assert len(machine.queued) == 0
+
+    # run a few cycles
+    for i in range(2):
+        yield clock.advance(1)
+
+    # tx failed and not requeued
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
 
     machine.stop()
 
