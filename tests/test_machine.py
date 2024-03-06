@@ -428,6 +428,7 @@ def test_use_strategies_speedup_used(
     clock,
     eip1559_transaction,
     account,
+    mocker,
     mock_wake_sleep,
 ):
     machine.start()
@@ -436,20 +437,41 @@ def test_use_strategies_speedup_used(
     old_max_fee = eip1559_transaction["maxFeePerGas"]
     old_priority_fee = eip1559_transaction["maxPriorityFeePerGas"]
 
+    broadcast_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast=broadcast_hook,
     )
+
+    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
 
     # advance to broadcast the transaction
     while machine.pending is None:
         yield clock.advance(1)
 
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+    broadcast_hook.assert_called_with(atx), "called with correct parameter"
+
     assert machine.current_state == machine._BUSY
 
+    original_params = dict(atx.params)
+
+    # need some cycles while tx unmined for strategies to kick in
     for i in range(2):
-        # advance 2 cycles
         yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert (
+        broadcast_hook.call_count > 1
+    ), "additional calls to broadcast since tx retried/replaced"
+    broadcast_hook.assert_called_with(atx), "called with correct parameter"
+
+    assert atx.params != original_params, "params changed"
+    assert update_spy.call_count > 0, "params updated"
 
     while not machine.finalized:
         yield ethereum_tester.mine_block()
@@ -493,7 +515,6 @@ def test_use_strategies_timeout_used(
     mocker,
     mock_wake_sleep,
 ):
-    # TODO consider whether this should just be provided to constructor - #23
     fault_hook = mocker.Mock()
 
     machine.start()
@@ -511,7 +532,7 @@ def test_use_strategies_timeout_used(
 
     # don't mine transaction at all; wait for hook to be called when timeout occurs
 
-    # need some cycles for strategies to kick in
+    # need some cycles while tx unmined for strategies to kick in
     num_cycles = 4
     for i in range(num_cycles):
         # reduce creation time by timeout to force timeout
