@@ -2,14 +2,26 @@ from copy import copy, deepcopy
 from typing import List, Optional, Type
 
 from eth_account.signers.local import LocalAccount
+from eth_utils import ValidationError
 from statemachine import State, StateMachine
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
 from web3 import Web3
+from web3.exceptions import (
+    ProviderConnectionError,
+    TimeExhausted,
+    TooManyRequests,
+    Web3Exception,
+)
 from web3.types import TxParams
 
-from atxm.exceptions import TransactionFaulted, TransactionReverted
+from atxm.exceptions import (
+    Fault,
+    InsufficientFunds,
+    TransactionFaulted,
+    TransactionReverted,
+)
 from atxm.strategies import (
     AsyncTxStrategy,
     ExponentialSpeedupStrategy,
@@ -26,7 +38,6 @@ from atxm.utils import (
     _get_average_blocktime,
     _get_confirmations,
     _get_receipt,
-    _handle_rpc_error,
     _make_tx_params,
     fire_hook,
 )
@@ -301,9 +312,18 @@ class _Machine(StateMachine):
         into the active transaction slot if broadcast is successful.
         """
         signer: LocalAccount = self.__get_signer(tx.params["from"])
-        txhash = self.w3.eth.send_raw_transaction(
-            signer.sign_transaction(tx.params).rawTransaction
-        )
+        try:
+            txhash = self.w3.eth.send_raw_transaction(
+                signer.sign_transaction(tx.params).rawTransaction
+            )
+        except ValidationError as e:
+            # special case for insufficient funds
+            if "Sender does not have enough" in str(e):
+                # TODO raised exception should be handled in some way #13.
+                raise InsufficientFunds
+
+            raise e
+
         self.log.info(
             f"[{msg}] fired transaction #atx-{tx.id}|{tx.params['nonce']}|{txhash.hex()}"
         )
@@ -338,7 +358,29 @@ class _Machine(StateMachine):
         _names = " -> ".join(s.name for s in self._strategies)
 
         # TODO try-except needed here (similar to broadcast) #14, #18, #20
-        txhash = self.__fire(tx=_active_copy, msg=_names)
+        try:
+            txhash = self.__fire(tx=_active_copy, msg=_names)
+        except (TooManyRequests, ProviderConnectionError, TimeExhausted) as e:
+            # recoverable
+            # TODO don't retry forever #12, #20
+            log.warn(
+                f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
+                f"failed with updated params - {str(e)}; retry next round"
+            )
+            return
+        except (ValidationError, Web3Exception, ValueError) as e:
+            # non-recoverable
+            log.error(
+                f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
+                f"faulted with critical error - {str(e)}; tx will not be retried"
+            )
+            fault_error = TransactionFaulted(
+                tx=_active_copy,
+                fault=Fault.ERROR,
+                message=str(e),
+            )
+            self._tx_tracker.fault(fault_error=fault_error)
+            return
 
         _active_copy.txhash = txhash
         self._tx_tracker.update_after_retry(_active_copy)
@@ -368,10 +410,24 @@ class _Machine(StateMachine):
 
         try:
             txhash = self.__fire(tx=future_tx, msg="broadcast")
-        except ValueError as e:
-            _handle_rpc_error(e, tx=future_tx)
+        except (TooManyRequests, ProviderConnectionError, TimeExhausted) as e:
+            # recoverable - try again another time
             # TODO don't requeue forever #12, #20
+            log.warn(
+                f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                f"failed - {str(e)}; requeueing tx"
+            )
             self._tx_tracker._requeue(future_tx)
+            return
+        except (ValidationError, Web3Exception, ValueError) as e:
+            # non-recoverable
+            log.error(
+                f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                f"has non-recoverable failure - {str(e)}; tx will not be requeued"
+            )
+            hook = future_tx.on_broadcast_failure
+            if hook:
+                fire_hook(hook=hook, tx=future_tx, error=e)
             return
 
         self._tx_tracker.morph(tx=future_tx, txhash=txhash)

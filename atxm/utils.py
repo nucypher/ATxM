@@ -6,10 +6,9 @@ from twisted.internet import reactor
 from web3 import Web3
 from web3.exceptions import TransactionNotFound
 from web3.types import TxData, TxParams
-from web3.types import RPCError, TxReceipt, Wei
+from web3.types import TxReceipt, Wei
 
 from atxm.exceptions import (
-    InsufficientFunds,
     TransactionReverted,
 )
 from atxm.logging import log
@@ -114,25 +113,6 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
 
         reactor.callInThread(_hook)
         log.info(f"[hook] fired hook {hook} for transaction #atx-{tx.id}")
-
-
-def _handle_rpc_error(e: Exception, tx: AsyncTx) -> None:
-    try:
-        error = RPCError(**e.args[0])
-    except TypeError:
-        log.critical(
-            f"[error] transaction #atx-{tx.id}|{tx.params['nonce']} failed with {e}"
-        )
-    else:
-        log.critical(
-            f"[error] transaction #atx-{tx.id}|{tx.params['nonce']} failed with {error['code']} | {error['message']}"
-        )
-        if error["code"] == -32000:
-            if "insufficient funds" in error["message"]:
-                raise InsufficientFunds
-        hook = tx.on_fault
-        if hook:
-            fire_hook(hook=hook, tx=tx, error=e)
 
 
 def _make_tx_params(data: TxData) -> TxParams:

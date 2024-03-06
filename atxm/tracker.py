@@ -208,6 +208,7 @@ class _TxTracker:
         params: TxParams,
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
+        on_broadcast_failure: Optional[Callable[[FutureTx, Exception], None]] = None,
         on_finalized: Optional[Callable[[FinalizedTx], None]] = None,
         on_fault: Optional[Callable[[FaultedTx], None]] = None,
     ) -> FutureTx:
@@ -220,6 +221,7 @@ class _TxTracker:
 
         # configure hooks
         tx.on_broadcast = on_broadcast
+        tx.on_broadcast_failure = on_broadcast_failure
         tx.on_finalized = on_finalized
         tx.on_fault = on_fault
 
