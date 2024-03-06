@@ -289,7 +289,7 @@ class _Machine(StateMachine):
             raise ValueError(f"Signer {address} not found")
         return signer
 
-    def __fire(self, tx: AsyncTx, msg: str) -> Optional[TxHash]:
+    def __fire(self, tx: AsyncTx, msg: str) -> TxHash:
         """
         Signs and broadcasts a transaction, handling RPC errors
         and internal state changes.
