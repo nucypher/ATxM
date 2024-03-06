@@ -7,7 +7,7 @@ from eth_account import Account
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
 
-from atxm.strategies import TimeoutStrategy
+from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tx import FutureTx, PendingTx
 
 
@@ -532,6 +532,90 @@ def test_use_strategies_timeout_used(
 
     assert not machine.busy
     assert not atx.final
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
+def test_use_strategies_that_dont_make_updates(
+    ethereum_tester,
+    w3,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    # TODO consider whether this should just be provided to constructor - #23
+    machine._strategies.clear()
+
+    # strategies that don't make updates
+    strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
+    strategy_1.execute.return_value = None
+    strategy_2 = mocker.Mock(spec=AsyncTxStrategy)
+    strategy_2.execute.return_value = None
+
+    machine._strategies = [strategy_1, strategy_2]
+
+    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    broadcast_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction, signer=account, on_broadcast=broadcast_hook
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+    broadcast_hook.assert_called_with(atx), "called with correct parameter"
+
+    original_params = dict(atx.params)
+
+    assert machine.current_state == machine._BUSY
+
+    # need some cycles while tx unmined for strategies to kick in
+    num_cycles = 4
+    for i in range(num_cycles):
+        yield clock.advance(1)
+        # params remained unchanged since strategies don't make updates
+        assert atx.params == original_params, "params remain unchanged"
+
+    s1_call_count = strategy_1.execute.call_count
+    assert s1_call_count > 0, "strategy #1 was called"
+    s2_call_count = strategy_2.execute.call_count
+    assert s2_call_count > 0, "strategy #2 was called"
+
+    assert atx.params == original_params, "params remain unchanged"
+    assert update_spy.call_count == 0, "update never called because no retry"
+
+    # mine tx
+    ethereum_tester.mine_block()
+    yield clock.advance(1)
+
+    # ensure switch back to IDLE
+    yield clock.advance(1)
+
+    assert len(machine.queued) == 0
+    assert machine.pending is None
+
+    assert not machine.busy
+    assert atx.final
 
     assert machine.current_state == machine._IDLE
 
