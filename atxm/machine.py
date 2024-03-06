@@ -8,12 +8,7 @@ from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
 from web3 import Web3
-from web3.exceptions import (
-    ProviderConnectionError,
-    TimeExhausted,
-    TooManyRequests,
-    Web3Exception,
-)
+from web3.exceptions import Web3Exception
 from web3.types import TxParams
 
 from atxm.exceptions import (
@@ -38,6 +33,7 @@ from atxm.utils import (
     _get_average_blocktime,
     _get_confirmations,
     _get_receipt,
+    _is_recoverable_send_tx_error,
     _make_tx_params,
     fire_hook,
 )
@@ -350,7 +346,8 @@ class _Machine(StateMachine):
 
         if not params_updated:
             log.info(
-                f"[wait] strategies made no suggested updates to pending tx #{_active_copy.id} - skipping retry round"
+                f"[wait] strategies made no suggested updates to "
+                f"pending tx #{_active_copy.id} - skipping retry round"
             )
             return
 
@@ -360,26 +357,29 @@ class _Machine(StateMachine):
         # TODO try-except needed here (similar to broadcast) #14, #18, #20
         try:
             txhash = self.__fire(tx=_active_copy, msg=_names)
-        except (TooManyRequests, ProviderConnectionError, TimeExhausted) as e:
-            # recoverable
-            # TODO don't retry forever #12, #20
-            log.warn(
-                f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
-                f"failed with updated params - {str(e)}; retry next round"
-            )
-            return
+        except InsufficientFunds:
+            # special case re-raise insufficient funds (for now)
+            # TODO #13
+            raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            # non-recoverable
-            log.error(
-                f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
-                f"faulted with critical error - {str(e)}; tx will not be retried"
-            )
-            fault_error = TransactionFaulted(
-                tx=_active_copy,
-                fault=Fault.ERROR,
-                message=str(e),
-            )
-            self._tx_tracker.fault(fault_error=fault_error)
+            if _is_recoverable_send_tx_error(e):
+                # TODO don't retry forever #12, #20
+                log.warn(
+                    f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
+                    f"failed with updated params - {str(e)}; retry next round"
+                )
+            else:
+                # non-recoverable
+                log.error(
+                    f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
+                    f"faulted non-recoverable failure - {str(e)}; tx will not be retried and removed"
+                )
+                fault_error = TransactionFaulted(
+                    tx=_active_copy,
+                    fault=Fault.ERROR,
+                    message=str(e),
+                )
+                self._tx_tracker.fault(fault_error=fault_error)
             return
 
         _active_copy.txhash = txhash
@@ -404,30 +404,34 @@ class _Machine(StateMachine):
         if nonce > future_tx.params["nonce"]:
             self.log.warn(
                 f"[broadcast] nonce {future_tx.params['nonce']} has been front-run "
-                f"by another transaction. Updating queued tx nonce {future_tx.params['nonce']} -> {nonce}"
+                f"by another transaction. Updating queued tx "
+                f"nonce {future_tx.params['nonce']} -> {nonce}"
             )
         future_tx.params["nonce"] = nonce
 
         try:
             txhash = self.__fire(tx=future_tx, msg="broadcast")
-        except (TooManyRequests, ProviderConnectionError, TimeExhausted) as e:
-            # recoverable - try again another time
-            # TODO don't requeue forever #12, #20
-            log.warn(
-                f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                f"failed - {str(e)}; requeueing tx"
-            )
-            self._tx_tracker._requeue(future_tx)
-            return
+        except InsufficientFunds:
+            # special case re-raise insufficient funds (for now)
+            # TODO #13
+            raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            # non-recoverable
-            log.error(
-                f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                f"has non-recoverable failure - {str(e)}; tx will not be requeued"
-            )
-            hook = future_tx.on_broadcast_failure
-            if hook:
-                fire_hook(hook=hook, tx=future_tx, error=e)
+            if _is_recoverable_send_tx_error(e):
+                # TODO don't requeue forever #12, #20
+                log.warn(
+                    f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                    f"failed - {str(e)}; requeueing tx"
+                )
+                self._tx_tracker._requeue(future_tx)
+            else:
+                # non-recoverable
+                log.error(
+                    f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                    f"has non-recoverable failure - {str(e)}; tx will not be requeued and removed"
+                )
+                hook = future_tx.on_broadcast_failure
+                if hook:
+                    fire_hook(hook=hook, tx=future_tx, error=e)
             return
 
         self._tx_tracker.morph(tx=future_tx, txhash=txhash)

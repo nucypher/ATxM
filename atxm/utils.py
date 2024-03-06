@@ -4,7 +4,12 @@ from typing import Callable, Optional, Union
 from cytoolz import memoize
 from twisted.internet import reactor
 from web3 import Web3
-from web3.exceptions import TransactionNotFound
+from web3.exceptions import (
+    ProviderConnectionError,
+    TimeExhausted,
+    TooManyRequests,
+    TransactionNotFound,
+)
 from web3.types import TxData, TxParams
 from web3.types import TxReceipt, Wei
 
@@ -148,3 +153,7 @@ def _make_tx_params(data: TxData) -> TxParams:
         raise ValueError(f"unrecognized tx data: {data}")
 
     return params
+
+
+def _is_recoverable_send_tx_error(e: Exception) -> bool:
+    return isinstance(e, (TooManyRequests, ProviderConnectionError, TimeExhausted))
