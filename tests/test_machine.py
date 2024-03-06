@@ -3,6 +3,7 @@ import math
 import pytest
 
 import pytest_twisted
+from eth_account import Account
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
 
@@ -37,6 +38,49 @@ def test_no_rpc_calls_when_idle(clock, machine, state_observer, rpc_spy):
     assert len(state_observer.transitions) == 0  # remained idle
 
     machine.stop()
+
+
+def test_queue_from_parameter_handling(
+    machine,
+    account,
+    eip1559_transaction,
+    mock_wake_sleep,
+):
+    # 1. "from" parameter does not match account
+    with pytest.raises(ValueError):
+        tx_params = dict(eip1559_transaction)
+
+        # use random checksum address
+        random_account = Account.create(
+            "YOUTH IS WASTED ON THE YOUNG"
+        )  # - George Bernard Shaw
+        assert random_account.address != account.address, "addresses don't match"
+
+        tx_params["from"] = random_account.address
+        _ = machine.queue_transaction(
+            params=tx_params,
+            signer=account,
+        )
+
+    # 2. no "from" parameter
+    tx_params = dict(eip1559_transaction)
+    if "from" in eip1559_transaction:
+        del tx_params["from"]
+
+    atx = machine.queue_transaction(
+        params=tx_params,
+        signer=account,
+    )
+    assert atx.params["from"] == account.address, "same as signer account"
+
+    # 3. matching "from" parameter
+    tx_params = dict(eip1559_transaction)
+    tx_params["from"] = account.address
+    atx = machine.queue_transaction(
+        params=tx_params,
+        signer=account,
+    )
+    assert atx.params["from"] == account.address
 
 
 def test_queue(
