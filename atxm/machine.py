@@ -429,7 +429,7 @@ class _Machine(StateMachine):
                 )
                 hook = future_tx.on_broadcast_failure
                 if hook:
-                    fire_hook(hook=hook, tx=future_tx, error=e)
+                    fire_hook(hook, future_tx, e)
             return
 
         self._tx_tracker.morph(tx=future_tx, txhash=txhash)

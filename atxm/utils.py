@@ -102,7 +102,7 @@ def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
     return confirmations
 
 
-def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
+def fire_hook(hook: Callable, tx: AsyncTx, *args) -> None:
     """
     Fire a callable in a separate thread.
     Try exceptionally hard not to crash the async tasks during dispatch.
@@ -112,7 +112,7 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
         def _hook() -> None:
             """I'm inside a thread!"""
             try:
-                hook(tx, *args, **kwargs)
+                hook(tx, *args)
             except Exception as e:
                 log.warn(f"[hook] raised {e}")
 
