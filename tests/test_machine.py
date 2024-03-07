@@ -15,7 +15,7 @@ from web3.exceptions import (
 )
 
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
-from atxm.tx import FutureTx, PendingTx
+from atxm.tx import FaultedTx, FinalizedTx, FutureTx, PendingTx
 from atxm.utils import _is_recoverable_send_tx_error
 
 
@@ -989,9 +989,116 @@ def test_retry_with_errors_but_recovers(
 
     assert len(machine.queued) == 0
     assert machine.pending is None
+    assert machine._retry_failure_counter.get(atx.id) is None  # no longer tracked
 
     assert not machine.busy
     assert atx.final
+    assert isinstance(atx, FinalizedTx)
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.parametrize(
+    "retry_error",
+    [
+        ValidationError,
+        ValueError,
+        Web3Exception,
+        TooManyRequests,
+        ProviderConnectionError,
+        TimeExhausted,
+    ],
+)
+def test_retry_with_errors_retries_exceeded(
+    retry_error,
+    ethereum_tester,
+    w3,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    # TODO consider whether this should just be provided to constructor - #23
+    machine._strategies.clear()
+
+    # strategies that don't make updates
+    strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
+    strategy_1.name = "mock_strategy"
+    # return non-None so retry is attempted
+    strategy_1.execute.return_value = dict(eip1559_transaction)
+
+    machine._strategies = [strategy_1]
+
+    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    broadcast_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_fault=fault_hook,
+        on_broadcast=broadcast_hook,
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+
+    assert machine.current_state == machine._BUSY
+
+    # make firing of retry transaction fail with non-recoverable error
+    error = retry_error("retry error")
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
+
+    # retry max attempts
+    for i in range(machine._NUM_REDO_ATTEMPTS):
+        assert machine.pending is not None
+        yield clock.advance(1)
+        assert machine._retry_failure_counter.get(atx.id, 0) >= i
+
+    # push over retry limit
+    yield clock.advance(1)
+
+    assert strategy_1.execute.call_count > 0, "strategy #1 was called"
+    # retries failed, so params shouldn't have been updated
+    assert update_spy.call_count == 0, "update never called because each retry failed"
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert fault_hook.call_count == 1
+    fault_hook.assert_called_with(atx)
+
+    assert machine._retry_failure_counter.get(atx.id) is None  # no longer tracked
+
+    assert len(machine.queued) == 0
+    assert atx.final is False
+    assert isinstance(atx, FaultedTx)
+
+    # ensure switch back to IDLE
+    yield clock.advance(1)
+
+    assert len(machine.queued) == 0
+    assert machine.pending is None
+
+    assert not machine.busy
 
     assert machine.current_state == machine._IDLE
 
