@@ -101,7 +101,8 @@ class _Machine(StateMachine):
         ExponentialSpeedupStrategy,
     ]
 
-    _NUM_REDO_ATTEMPTS = 3
+    # max requeues/retries
+    _MAX_REDO_ATTEMPTS = 3
 
     class LogObserver:
         """StateMachine observer for logging information about state/transitions."""
@@ -393,7 +394,7 @@ class _Machine(StateMachine):
         )
         num_failed_retries = self._retry_failure_counter.get(pending_tx.id, 0)
         num_failed_retries += 1
-        if num_failed_retries > self._NUM_REDO_ATTEMPTS:
+        if num_failed_retries > self._MAX_REDO_ATTEMPTS:
             log.error(
                 f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
                 f"failed for {num_failed_retries} attempts; tx will no longer be retried"
@@ -453,7 +454,7 @@ class _Machine(StateMachine):
         is_broadcast_failure = False
         if _is_recoverable_send_tx_error(e):
             num_requeues = self._requeue_counter.get(future_tx.id, 0)
-            if num_requeues >= self._NUM_REDO_ATTEMPTS:
+            if num_requeues >= self._MAX_REDO_ATTEMPTS:
                 is_broadcast_failure = True
                 log.error(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "

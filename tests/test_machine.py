@@ -400,7 +400,7 @@ def test_broadcast_recoverable_error(
     mock_wake_sleep,
 ):
     # need more freedom with redo attempts for test
-    mocker.patch.object(machine, "_NUM_REDO_ATTEMPTS", 10)
+    mocker.patch.object(machine, "_MAX_REDO_ATTEMPTS", 10)
 
     wake, _ = mock_wake_sleep
 
@@ -513,7 +513,7 @@ def test_broadcast_recoverable_error_requeues_exceeded(
     # repeat some cycles; tx fails then gets requeued since error is "recoverable"
     machine.start(now=True)
     # one less than max attempts
-    for i in range(machine._NUM_REDO_ATTEMPTS - 1):
+    for i in range(machine._MAX_REDO_ATTEMPTS - 1):
         assert len(machine.queued) == 1  # remains in queue and not broadcasted
         yield clock.advance(1)
         assert machine._requeue_counter.get(atx.id, 0) >= i
@@ -916,7 +916,7 @@ def test_retry_with_errors_but_recovers(
     mock_wake_sleep,
 ):
     # need more freedom with redo attempts for test
-    mocker.patch.object(machine, "_NUM_REDO_ATTEMPTS", 10)
+    mocker.patch.object(machine, "_MAX_REDO_ATTEMPTS", 10)
 
     # TODO consider whether this should just be provided to constructor - #23
     machine._strategies.clear()
@@ -1069,7 +1069,7 @@ def test_retry_with_errors_retries_exceeded(
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
 
     # retry max attempts
-    for i in range(machine._NUM_REDO_ATTEMPTS):
+    for i in range(machine._MAX_REDO_ATTEMPTS):
         assert machine.pending is not None
         yield clock.advance(1)
         assert machine._retry_failure_counter.get(atx.id, 0) >= i
