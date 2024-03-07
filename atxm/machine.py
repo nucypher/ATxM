@@ -273,11 +273,17 @@ class _Machine(StateMachine):
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted as e:
+            # clear entry if exists
+            self._retry_failure_counter.pop(pending_tx.id, "None")
+
             self._tx_tracker.fault(fault_error=e)
             return
 
         # Outcome 3: pending transaction is finalized (final success)
         if receipt:
+            # clear entry if exists
+            self._retry_failure_counter.pop(pending_tx.id, "None")
+
             final_txhash = receipt["transactionHash"]
             confirmations = _get_confirmations(w3=self.w3, tx=pending_tx)
             self.log.info(
