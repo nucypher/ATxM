@@ -12,7 +12,6 @@ from web3.exceptions import Web3Exception
 from web3.types import TxParams
 
 from atxm.exceptions import (
-    Fault,
     InsufficientFunds,
     TransactionFaulted,
     TransactionReverted,
@@ -352,7 +351,6 @@ class _Machine(StateMachine):
         # (!) retry the transaction with the new parameters
         _names = " -> ".join(s.name for s in self._strategies)
 
-        # TODO try-except needed here (similar to broadcast) #14, #18, #20
         try:
             txhash = self.__fire(tx=_active_copy, msg=_names)
         except InsufficientFunds:
@@ -360,24 +358,11 @@ class _Machine(StateMachine):
             # TODO #13
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            if _is_recoverable_send_tx_error(e):
-                # TODO don't retry forever #12, #20
-                log.warn(
-                    f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
-                    f"failed with updated params - {str(e)}; retry next round"
-                )
-            else:
-                # non-recoverable
-                log.error(
-                    f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
-                    f"faulted non-recoverable failure - {str(e)}; tx will not be retried and removed"
-                )
-                fault_error = TransactionFaulted(
-                    tx=_active_copy,
-                    fault=Fault.ERROR,
-                    message=str(e),
-                )
-                self._tx_tracker.fault(fault_error=fault_error)
+            # TODO don't retry forever #12, #14
+            log.warn(
+                f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
+                f"failed with updated params - {str(e)}; retry again next round"
+            )
             return
 
         _active_copy.txhash = txhash

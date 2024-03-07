@@ -14,7 +14,6 @@ from web3.exceptions import (
     Web3Exception,
 )
 
-from atxm.exceptions import Fault
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tx import FutureTx, PendingTx
 from atxm.utils import _is_recoverable_send_tx_error
@@ -806,10 +805,18 @@ def test_use_strategies_that_dont_make_updates(
 @pytest_twisted.inlineCallbacks
 @pytest.mark.usefixtures("disable_auto_mining")
 @pytest.mark.parametrize(
-    "non_recoverable_error", [ValidationError, ValueError, Web3Exception]
+    "retry_error",
+    [
+        ValidationError,
+        ValueError,
+        Web3Exception,
+        TooManyRequests,
+        ProviderConnectionError,
+        TimeExhausted,
+    ],
 )
-def test_retry_non_recoverable(
-    non_recoverable_error,
+def test_retry_with_error(
+    retry_error,
     ethereum_tester,
     w3,
     machine,
@@ -836,37 +843,56 @@ def test_retry_non_recoverable(
     machine.start()
     assert machine.current_state == machine._IDLE
 
+    broadcast_hook = mocker.Mock()
     fault_hook = mocker.Mock()
     atx = machine.queue_transaction(
-        params=eip1559_transaction, signer=account, on_fault=fault_hook
+        params=eip1559_transaction,
+        signer=account,
+        on_fault=fault_hook,
+        on_broadcast=broadcast_hook,
     )
 
     # advance to broadcast the transaction
     while machine.pending is None:
         yield clock.advance(1)
 
+    # ensure that hook is not called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+
     # ensure that hook is called
     assert machine.current_state == machine._BUSY
 
-    # make firing of transaction fail with non-recoverable error
-    error = non_recoverable_error("non-recoverable error")
-    assert not _is_recoverable_send_tx_error(error)
+    real_method = w3.eth.send_raw_transaction
+
+    # make firing of retry transaction fail with non-recoverable error
+    error = retry_error("retry error")
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
 
     # run a cycle while tx unmined for strategies to kick in
-    yield clock.advance(1)
+    for i in range(5):
+        yield clock.advance(1)
+        assert (
+            machine.pending
+        ), "tx is being retried but encounters retry error and remains pending"
 
     assert strategy_1.execute.call_count > 0, "strategy #1 was called"
-
-    # however retry failed, so params shouldn't have been updated
+    # retry failed, so params shouldn't have been updated
     assert update_spy.call_count == 0, "update never called because no retry"
 
-    # ensure that hook is called
+    # call real method from now on
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=real_method)
+
+    while not machine.finalized:
+        yield ethereum_tester.mine_block()
+        yield clock.advance(1)
+
+    yield clock.advance(1)
+    assert atx.final is True
+
+    # ensure that hook is not called
     yield deferLater(reactor, 0.2, lambda: None)
-    assert fault_hook.call_count == 1
-    fault_hook.assert_called_with(atx)
-    assert atx.fault == Fault.ERROR
-    assert atx.error == "non-recoverable error"
+    assert fault_hook.call_count == 0
 
     # ensure switch back to IDLE
     yield clock.advance(1)
@@ -875,7 +901,7 @@ def test_retry_non_recoverable(
     assert machine.pending is None
 
     assert not machine.busy
-    assert not atx.final
+    assert atx.final
 
     assert machine.current_state == machine._IDLE
 
