@@ -357,6 +357,9 @@ class _Machine(StateMachine):
                 params_updated = True
 
         if not params_updated:
+            # TODO is this a potential forever wait - this is really controlled by strategies
+            #  who can no longer do anything. if we limit the wait here then the TimeoutStrategy
+            #  becomes useless - something to think about. #14
             log.info(
                 f"[wait] strategies made no suggested updates to "
                 f"pending tx #{_active_copy.id} - skipping retry round"
