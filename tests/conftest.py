@@ -10,6 +10,7 @@ from twisted.logger import globalLogPublisher, textFileLogObserver
 
 from atxm import AutomaticTxMachine
 from atxm.logging import log
+from atxm.strategies import ExponentialSpeedupStrategy, TimeoutStrategy
 
 observer = textFileLogObserver(sys.stdout)
 globalLogPublisher.addObserver(observer)
@@ -61,9 +62,19 @@ def w3(networks):
 
 
 @pytest.fixture
-def machine(w3):
+def strategies(w3):
+    _strategy_classes = [
+        TimeoutStrategy,
+        ExponentialSpeedupStrategy,
+    ]
+    _strategies = [s(w3) for s in _strategy_classes]
+    return _strategies
+
+
+@pytest.fixture
+def machine(w3, strategies):
     clock = Clock()
-    _machine = AutomaticTxMachine(w3=w3)
+    _machine = AutomaticTxMachine(w3=w3, strategies=strategies)
     _machine._task.clock = clock
     yield _machine
 

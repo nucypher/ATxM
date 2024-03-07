@@ -1,5 +1,5 @@
 from copy import copy, deepcopy
-from typing import List, Optional, Type
+from typing import List, Optional
 
 from eth_account.signers.local import LocalAccount
 from eth_utils import ValidationError
@@ -17,11 +17,7 @@ from atxm.exceptions import (
     TransactionFaulted,
     TransactionReverted,
 )
-from atxm.strategies import (
-    AsyncTxStrategy,
-    ExponentialSpeedupStrategy,
-    TimeoutStrategy,
-)
+from atxm.strategies import AsyncTxStrategy
 from atxm.tracker import _TxTracker
 from atxm.tx import (
     AsyncTx,
@@ -96,11 +92,6 @@ class _Machine(StateMachine):
     _BLOCK_INTERVAL = 20  # ~20 blocks
     _BLOCK_SAMPLE_SIZE = 10_000  # blocks
 
-    STRATEGIES: List[Type[AsyncTxStrategy]] = [
-        TimeoutStrategy,
-        ExponentialSpeedupStrategy,
-    ]
-
     # max requeues/retries
     _MAX_REDO_ATTEMPTS = 3
 
@@ -124,7 +115,7 @@ class _Machine(StateMachine):
         self.w3 = w3
         self.signers = {}
         self.log = log
-        self._strategies = [s(w3) for s in self.STRATEGIES]
+        self._strategies = list()
         if strategies:
             self._strategies.extend(list(strategies))
 
@@ -348,8 +339,9 @@ class _Machine(StateMachine):
 
         if not params_updated:
             # TODO is this a potential forever wait - this is really controlled by strategies
-            #  who can no longer do anything. if we limit the wait here then the TimeoutStrategy
-            #  becomes useless - something to think about. #14
+            #  who can no longer do anything OR if there are no strategies defined. Something
+            #  to think about. If we simply limit retry here, then what does that mean if there is
+            #  a TimeoutStrategy? #14
             log.info(
                 f"[wait] strategies made no suggested updates to "
                 f"pending tx #{_active_copy.id} - skipping retry round"

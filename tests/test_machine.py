@@ -1,4 +1,5 @@
 import math
+from typing import List, Optional
 
 import pytest
 
@@ -14,6 +15,7 @@ from web3.exceptions import (
     Web3Exception,
 )
 
+from atxm import AutomaticTxMachine
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tx import FaultedTx, FinalizedTx, FutureTx, PendingTx
 from atxm.utils import _is_recoverable_send_tx_error
@@ -820,16 +822,13 @@ def test_use_strategies_that_dont_make_updates(
     mocker,
     mock_wake_sleep,
 ):
-    # TODO consider whether this should just be provided to constructor - #23
-    machine._strategies.clear()
-
     # strategies that don't make updates
     strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
     strategy_1.execute.return_value = None
     strategy_2 = mocker.Mock(spec=AsyncTxStrategy)
     strategy_2.execute.return_value = None
 
-    machine._strategies = [strategy_1, strategy_2]
+    _configure_machine_strategies(machine, [strategy_1, strategy_2])
 
     update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
 
@@ -891,6 +890,77 @@ def test_use_strategies_that_dont_make_updates(
 
 @pytest_twisted.inlineCallbacks
 @pytest.mark.usefixtures("disable_auto_mining")
+def test_dont_use_any_strategies(
+    ethereum_tester,
+    w3,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    # strategies that don't make updates
+    _configure_machine_strategies(machine, None)
+
+    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    broadcast_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction, signer=account, on_broadcast=broadcast_hook
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+    broadcast_hook.assert_called_with(atx), "called with correct parameter"
+
+    original_params = dict(atx.params)
+
+    assert machine.current_state == machine._BUSY
+
+    # need some cycles while tx unmined for strategies to kick in
+    num_cycles = 4
+    for i in range(num_cycles):
+        yield clock.advance(1)
+        # params remained unchanged since strategies don't make updates
+        assert atx.params == original_params, "params remain unchanged"
+
+    assert atx.params == original_params, "params remain unchanged"
+    assert update_spy.call_count == 0, "update never called because no retry"
+
+    # mine tx
+    ethereum_tester.mine_block()
+    yield clock.advance(1)
+
+    # ensure switch back to IDLE
+    yield clock.advance(1)
+
+    assert len(machine.queued) == 0
+    assert machine.pending is None
+
+    assert not machine.busy
+    assert atx.final
+
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
 @pytest.mark.parametrize(
     "retry_error",
     [
@@ -917,16 +987,13 @@ def test_retry_with_errors_but_recovers(
     # need more freedom with redo attempts for test
     mocker.patch.object(machine, "_MAX_REDO_ATTEMPTS", 10)
 
-    # TODO consider whether this should just be provided to constructor - #23
-    machine._strategies.clear()
-
     # strategies that don't make updates
     strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
     strategy_1.name = "mock_strategy"
     # return non-None so retry is attempted
     strategy_1.execute.return_value = dict(eip1559_transaction)
 
-    machine._strategies = [strategy_1]
+    _configure_machine_strategies(machine, [strategy_1])
 
     update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
 
@@ -1028,16 +1095,13 @@ def test_retry_with_errors_retries_exceeded(
     mocker,
     mock_wake_sleep,
 ):
-    # TODO consider whether this should just be provided to constructor - #23
-    machine._strategies.clear()
-
     # strategies that don't make updates
     strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
     strategy_1.name = "mock_strategy"
     # return non-None so retry is attempted
     strategy_1.execute.return_value = dict(eip1559_transaction)
 
-    machine._strategies = [strategy_1]
+    _configure_machine_strategies(machine, [strategy_1])
 
     update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
 
@@ -1251,3 +1315,11 @@ def test_simple_state_transitions(
         assert machine.current_state == machine._IDLE
         assert wake.call_count == wake_call_count, "wake call count remains unchanged"
         assert sleep.call_count == sleep_call_count, "wake call count remains unchanged"
+
+
+def _configure_machine_strategies(
+    machine: AutomaticTxMachine, strategies: Optional[List[AsyncTxStrategy]] = None
+):
+    machine._strategies.clear()
+    if strategies:
+        machine._strategies.extend(strategies)
