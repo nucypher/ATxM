@@ -395,6 +395,9 @@ def test_broadcast_recoverable_error(
     mocker,
     mock_wake_sleep,
 ):
+    # need more freedom with redo attempts for test
+    mocker.patch.object(machine, "_NUM_REDO_ATTEMPTS", 10)
+
     wake, _ = mock_wake_sleep
 
     assert machine.current_state == machine._IDLE
@@ -815,7 +818,7 @@ def test_use_strategies_that_dont_make_updates(
         TimeExhausted,
     ],
 )
-def test_retry_with_error(
+def test_retry_with_errors_but_recovers(
     retry_error,
     ethereum_tester,
     w3,
@@ -827,6 +830,9 @@ def test_retry_with_error(
     mocker,
     mock_wake_sleep,
 ):
+    # need more freedom with redo attempts for test
+    mocker.patch.object(machine, "_NUM_REDO_ATTEMPTS", 10)
+
     # TODO consider whether this should just be provided to constructor - #23
     machine._strategies.clear()
 
