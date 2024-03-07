@@ -17,7 +17,7 @@ from atxm.exceptions import (
     TransactionFaulted,
     TransactionReverted,
 )
-from atxm.strategies import AsyncTxStrategy
+from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tracker import _TxTracker
 from atxm.tx import (
     AsyncTx,
@@ -108,6 +108,7 @@ class _Machine(StateMachine):
     def __init__(
         self,
         w3: Web3,
+        tx_exec_timeout: int = TimeoutStrategy.TIMEOUT,
         strategies: Optional[List[AsyncTxStrategy]] = None,
         disk_cache: bool = False,
     ):
@@ -115,7 +116,8 @@ class _Machine(StateMachine):
         self.w3 = w3
         self.signers = {}
         self.log = log
-        self._strategies = list()
+        # default TimeoutStrategy using provided timeout - guardrail for users
+        self._strategies = [TimeoutStrategy(w3, timeout=tx_exec_timeout)]
         if strategies:
             self._strategies.extend(list(strategies))
 
@@ -338,10 +340,7 @@ class _Machine(StateMachine):
                 params_updated = True
 
         if not params_updated:
-            # TODO is this a potential forever wait - this is really controlled by strategies
-            #  who can no longer do anything OR if there are no strategies defined. Something
-            #  to think about. If we simply limit retry here, then what does that mean if there is
-            #  a TimeoutStrategy? #14
+            # mandatory default timeout strategy prevents this from being a forever wait
             log.info(
                 f"[wait] strategies made no suggested updates to "
                 f"pending tx #{_active_copy.id} - skipping retry round"

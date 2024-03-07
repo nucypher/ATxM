@@ -18,10 +18,10 @@ def test_timeout_strategy(w3, mocker):
 
     # default timeout
     timeout_strategy = TimeoutStrategy(w3)
-    assert timeout_strategy.timeout == TimeoutStrategy._TIMEOUT
+    assert timeout_strategy.timeout == TimeoutStrategy.TIMEOUT
     assert (
         timeout_strategy._warn_threshold
-        == TimeoutStrategy._TIMEOUT * TimeoutStrategy._WARN_FACTOR
+        == TimeoutStrategy.TIMEOUT * TimeoutStrategy._WARN_FACTOR
     )
 
     # specific timeout - low timeout

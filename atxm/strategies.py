@@ -69,13 +69,14 @@ class TimeoutStrategy(AsyncTxStrategy):
 
     _NAME = "timeout"
 
-    _TIMEOUT = 60 * 60  # 1 hour in seconds
+    # TODO is this too long?
+    TIMEOUT = 60 * 60  # 1 hour in seconds
 
     _WARN_FACTOR = 0.15  # 15% of timeout remaining
 
     def __init__(self, w3: Web3, timeout: Optional[int] = None):
         super().__init__(w3)
-        self.timeout = timeout or self._TIMEOUT
+        self.timeout = timeout or self.TIMEOUT
         # use 30s as default in case timeout is too small for warn factor
         self._warn_threshold = max(30, self.timeout * self._WARN_FACTOR)
 
