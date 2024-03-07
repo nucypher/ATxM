@@ -12,6 +12,7 @@ from web3.exceptions import Web3Exception
 from web3.types import TxParams
 
 from atxm.exceptions import (
+    Fault,
     InsufficientFunds,
     TransactionFaulted,
     TransactionReverted,
@@ -25,6 +26,7 @@ from atxm.tracker import _TxTracker
 from atxm.tx import (
     AsyncTx,
     FutureTx,
+    PendingTx,
     TxHash,
 )
 from atxm.utils import (
@@ -99,7 +101,7 @@ class _Machine(StateMachine):
         ExponentialSpeedupStrategy,
     ]
 
-    _REDO_ATTEMPTS = 3
+    _NUM_REDO_ATTEMPTS = 3
 
     class LogObserver:
         """StateMachine observer for logging information about state/transitions."""
@@ -136,8 +138,9 @@ class _Machine(StateMachine):
         self._task.clock = self.__CLOCK
         self._task.interval = self._IDLE_INTERVAL
 
-        # requeues
+        # requeues/retries
         self._requeue_counter: Dict[int, int] = dict()
+        self._retry_failure_counter: Dict[int, int] = dict()
 
         super().__init__()
 
@@ -363,12 +366,11 @@ class _Machine(StateMachine):
             # TODO #13
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            # TODO don't retry forever #12, #14
-            log.warn(
-                f"[retry] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
-                f"failed with updated params - {str(e)}; retry again next round"
-            )
+            self.__handle_retry_failure(_active_copy, e)
             return
+
+        # clear failed retries since successful
+        self._retry_failure_counter.pop(_active_copy.id, None)
 
         _active_copy.txhash = txhash
         self._tx_tracker.update_after_retry(_active_copy)
@@ -377,6 +379,31 @@ class _Machine(StateMachine):
         self.log.info(f"[retry] transaction #{pending_tx.id} has been re-broadcasted")
         if pending_tx.on_broadcast:
             fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
+
+    def __handle_retry_failure(self, pending_tx: PendingTx, e: Exception):
+        log.warn(
+            f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
+            f"failed with updated params - {str(e)}; retry again next round"
+        )
+        num_failed_retries = self._retry_failure_counter.get(pending_tx.id, 0)
+        num_failed_retries += 1
+        if num_failed_retries > self._NUM_REDO_ATTEMPTS:
+            log.error(
+                f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
+                f"failed for {num_failed_retries} attempts; tx will no longer be retried"
+            )
+
+            # remove entry since no longer needed
+            self._retry_failure_counter.pop(pending_tx.id, None)
+
+            fault_error = TransactionFaulted(
+                tx=pending_tx,
+                fault=Fault.ERROR,
+                message=str(e),
+            )
+            self._tx_tracker.fault(fault_error=fault_error)
+        else:
+            self._retry_failure_counter[pending_tx.id] = num_failed_retries
 
     def __broadcast(self):
         """
@@ -408,7 +435,7 @@ class _Machine(StateMachine):
             self.__handle_broadcast_failure(future_tx, e)
             return
 
-        # clear requeue counter if necessary since successful
+        # clear requeue counter since successful
         self._requeue_counter.pop(future_tx.id, None)
 
         self._tx_tracker.morph(tx=future_tx, txhash=txhash)
@@ -420,7 +447,7 @@ class _Machine(StateMachine):
         is_broadcast_failure = False
         if _is_recoverable_send_tx_error(e):
             num_requeues = self._requeue_counter.get(future_tx.id, 0)
-            if num_requeues >= self._REDO_ATTEMPTS:
+            if num_requeues >= self._NUM_REDO_ATTEMPTS:
                 is_broadcast_failure = True
                 log.error(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
@@ -442,6 +469,7 @@ class _Machine(StateMachine):
             )
 
         if is_broadcast_failure:
+            # remove entry since no longer needed
             self._requeue_counter.pop(future_tx.id, None)
             hook = future_tx.on_broadcast_failure
             if hook:
