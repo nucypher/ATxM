@@ -1,5 +1,5 @@
 from copy import copy, deepcopy
-from typing import List, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from eth_account.signers.local import LocalAccount
 from eth_utils import ValidationError
@@ -99,6 +99,8 @@ class _Machine(StateMachine):
         ExponentialSpeedupStrategy,
     ]
 
+    _REDO_ATTEMPTS = 3
+
     class LogObserver:
         """StateMachine observer for logging information about state/transitions."""
 
@@ -133,6 +135,9 @@ class _Machine(StateMachine):
         self._task = LoopingCall(self._cycle)
         self._task.clock = self.__CLOCK
         self._task.interval = self._IDLE_INTERVAL
+
+        # requeues
+        self._requeue_counter: Dict[int, int] = dict()
 
         super().__init__()
 
@@ -399,28 +404,48 @@ class _Machine(StateMachine):
             # TODO #13
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            if _is_recoverable_send_tx_error(e):
-                # TODO don't requeue forever #12, #20
-                log.warn(
-                    f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                    f"failed - {str(e)}; requeueing tx"
-                )
-                self._tx_tracker.requeue(future_tx)
-            else:
-                # non-recoverable
-                log.error(
-                    f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                    f"has non-recoverable failure - {str(e)}; tx will not be requeued and removed"
-                )
-                hook = future_tx.on_broadcast_failure
-                if hook:
-                    fire_hook(hook, future_tx, e)
+            # either requeue OR fail and move on to subsequent txs
+            self.__handle_broadcast_failure(future_tx, e)
             return
+
+        # clear requeue counter if necessary since successful
+        self._requeue_counter.pop(future_tx.id, None)
 
         self._tx_tracker.morph(tx=future_tx, txhash=txhash)
         pending_tx = self._tx_tracker.pending
         if pending_tx.on_broadcast:
             fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
+
+    def __handle_broadcast_failure(self, future_tx: FutureTx, e: Exception):
+        is_broadcast_failure = False
+        if _is_recoverable_send_tx_error(e):
+            num_requeues = self._requeue_counter.get(future_tx.id, 0)
+            if num_requeues >= self._REDO_ATTEMPTS:
+                is_broadcast_failure = True
+                log.error(
+                    f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                    f"failed for {num_requeues} attempts; tx will not be requeued"
+                )
+            else:
+                log.warn(
+                    f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                    f"failed - {str(e)}; requeueing tx"
+                )
+                self._tx_tracker.requeue(future_tx)
+                self._requeue_counter[future_tx.id] = num_requeues + 1
+        else:
+            # non-recoverable
+            is_broadcast_failure = True
+            log.error(
+                f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                f"has non-recoverable failure - {str(e)}; tx will not be requeued"
+            )
+
+        if is_broadcast_failure:
+            self._requeue_counter.pop(future_tx.id, None)
+            hook = future_tx.on_broadcast_failure
+            if hook:
+                fire_hook(hook, future_tx, e)
 
     #
     # Monitoring
