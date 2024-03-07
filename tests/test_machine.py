@@ -512,7 +512,7 @@ def test_broadcast_recoverable_error_requeues_exceeded(
 
     # repeat some cycles; tx fails then gets requeued since error is "recoverable"
     machine.start(now=True)
-    # one less than attempts
+    # one less than max attempts
     for i in range(machine._NUM_REDO_ATTEMPTS - 1):
         assert len(machine.queued) == 1  # remains in queue and not broadcasted
         yield clock.advance(1)
@@ -947,11 +947,10 @@ def test_retry_with_errors_but_recovers(
     while machine.pending is None:
         yield clock.advance(1)
 
-    # ensure that hook is not called
+    # ensure that hook is called
     yield deferLater(reactor, 0.2, lambda: None)
     assert broadcast_hook.call_count == 1
 
-    # ensure that hook is called
     assert machine.current_state == machine._BUSY
 
     real_method = w3.eth.send_raw_transaction
@@ -968,8 +967,8 @@ def test_retry_with_errors_but_recovers(
         ), "tx is being retried but encounters retry error and remains pending"
 
     assert strategy_1.execute.call_count > 0, "strategy #1 was called"
-    # retry failed, so params shouldn't have been updated
-    assert update_spy.call_count == 0, "update never called because no retry"
+    # retries failed, so params shouldn't have been updated
+    assert update_spy.call_count == 0, "update never called because each retry failed"
 
     # call real method from now on
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=real_method)
