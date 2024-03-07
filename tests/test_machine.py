@@ -464,6 +464,85 @@ def test_broadcast_recoverable_error(
 
 @pytest_twisted.inlineCallbacks
 @pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.parametrize(
+    "recoverable_error", [TooManyRequests, ProviderConnectionError, TimeExhausted]
+)
+def test_broadcast_recoverable_error_requeues_exceeded(
+    recoverable_error,
+    clock,
+    w3,
+    machine,
+    state_observer,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    wake, _ = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    # Queue a transaction
+    broadcast_failure_hook = mocker.Mock()
+    broadcast_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_broadcast_failure=broadcast_failure_hook,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1
+
+    # There is one queued transaction
+    assert len(machine.queued) == 1
+
+    # make firing of transaction fail but with recoverable error
+    error = recoverable_error("recoverable error")
+    assert _is_recoverable_send_tx_error(error)
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
+
+    # repeat some cycles; tx fails then gets requeued since error is "recoverable"
+    machine.start(now=True)
+    # one less than attempts
+    for i in range(machine._NUM_REDO_ATTEMPTS - 1):
+        assert len(machine.queued) == 1  # remains in queue and not broadcasted
+        yield clock.advance(1)
+        assert machine._requeue_counter.get(atx.id, 0) >= i
+
+    # push over the retry limit
+    yield clock.advance(1)
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_failure_hook.call_count == 1
+    broadcast_failure_hook.assert_called_with(atx, error)
+
+    assert machine._requeue_counter.get(atx.id) is None  # no longer tracked
+
+    # The transaction failed and is not requeued
+    assert len(machine.queued) == 0
+
+    # run a few cycles
+    for i in range(2):
+        yield clock.advance(1)
+
+    assert broadcast_hook.call_count == 0
+
+    # tx failed and not requeued
+    assert machine.current_state == machine._IDLE
+
+    assert len(state_observer.transitions) == 2
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
 def test_finalize(
     ethereum_tester,
     clock,
