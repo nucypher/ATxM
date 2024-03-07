@@ -378,7 +378,7 @@ class _Machine(StateMachine):
         Attempts to broadcast the next `FutureTx` in the queue.
         If the broadcast is not successful, it is re-queued.
         """
-        future_tx = self._tx_tracker._pop()  # popleft
+        future_tx = self._tx_tracker.pop()  # popleft
         future_tx.params = _make_tx_params(future_tx.params)
 
         # update nonce as necessary
@@ -405,7 +405,7 @@ class _Machine(StateMachine):
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
                     f"failed - {str(e)}; requeueing tx"
                 )
-                self._tx_tracker._requeue(future_tx)
+                self._tx_tracker.requeue(future_tx)
             else:
                 # non-recoverable
                 log.error(
@@ -484,7 +484,7 @@ class _Machine(StateMachine):
                 f"Mismatched 'from' value ({from_param}) and 'signer' account ({signer.address})"
             )
 
-        tx = self._tx_tracker._queue(params=params_copy, *args, **kwargs)
+        tx = self._tx_tracker.queue_tx(params=params_copy, *args, **kwargs)
         if not previously_busy_or_paused:
             self._wake()
 

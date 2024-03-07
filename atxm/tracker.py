@@ -190,11 +190,11 @@ class _TxTracker:
         """Return the queue of transactions."""
         return tuple(self.__queue)
 
-    def _pop(self) -> FutureTx:
+    def pop(self) -> FutureTx:
         """Pop the next transaction from the queue."""
         return self.__queue.popleft()
 
-    def _requeue(self, tx: FutureTx) -> None:
+    def requeue(self, tx: FutureTx) -> None:
         """Re-queue a transaction for broadcast and subsequent tracking."""
         self.__queue.append(tx)
         self.commit()
@@ -203,7 +203,7 @@ class _TxTracker:
             f"priority {len(self.__queue)}"
         )
 
-    def _queue(
+    def queue_tx(
         self,
         params: TxParams,
         info: Dict[str, str] = None,
