@@ -111,6 +111,16 @@ class _TxTracker:
 
         return self.pending
 
+    def update_failed_retry_attempt(self, tx: PendingTx):
+        if tx.id != self.__active.id:
+            raise RuntimeError(
+                f"Trying to update unexpected active tx: from {self.__active.id} to {tx.id}"
+            )
+        self.__active.retries += 1
+        # safety check
+        if tx is not self.__active:
+            tx.retries += 1
+
     def morph(self, tx: FutureTx, txhash: TxHash) -> PendingTx:
         """
         Morphs a future transaction into a pending transaction.
@@ -196,6 +206,7 @@ class _TxTracker:
 
     def requeue(self, tx: FutureTx) -> None:
         """Re-queue a transaction for broadcast and subsequent tracking."""
+        tx.requeues += 1
         self.__queue.append(tx)
         self.commit()
         log.info(

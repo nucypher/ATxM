@@ -52,6 +52,7 @@ class AsyncTx(ABC):
 
 @dataclass
 class FutureTx(AsyncTx):
+    requeues: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
     info: Optional[Dict] = None
 
@@ -80,6 +81,7 @@ class FutureTx(AsyncTx):
 
 @dataclass
 class PendingTx(AsyncTx):
+    retries: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
     txhash: TxHash
     created: int

@@ -301,7 +301,7 @@ def test_broadcast(
     yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
-    assert machine._requeue_counter.get(atx.id) is None  # not tracked
+    assert atx.retries == 0
 
     # tx only broadcasted and not finalized, so we are still busy
     assert machine.current_state == machine._BUSY
@@ -371,7 +371,7 @@ def test_broadcast_non_recoverable_error(
 
     assert broadcast_hook.call_count == 0
 
-    assert machine._requeue_counter.get(atx.id) is None  # not tracked
+    assert atx.requeues == 0
 
     # tx failed and not requeued
     assert machine.current_state == machine._IDLE
@@ -434,6 +434,7 @@ def test_broadcast_recoverable_error(
     for i in range(5):
         yield clock.advance(1)
         assert len(machine.queued) == 1  # remains in queue and not broadcasted
+        assert atx.requeues >= i
 
     # call real method from now on
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=real_method)
@@ -456,8 +457,6 @@ def test_broadcast_recoverable_error(
     yield deferLater(reactor, 0.2, lambda: None)
     assert broadcast_hook.call_count == 1
     assert broadcast_failure_hook.call_count == 0
-
-    assert machine._requeue_counter.get(atx.id) is None  # no longer tracked
 
     # tx only broadcasted and not finalized, so we are still busy
     assert machine.current_state == machine._BUSY
@@ -516,7 +515,7 @@ def test_broadcast_recoverable_error_requeues_exceeded(
     for i in range(machine._MAX_REDO_ATTEMPTS - 1):
         assert len(machine.queued) == 1  # remains in queue and not broadcasted
         yield clock.advance(1)
-        assert machine._requeue_counter.get(atx.id, 0) >= i
+        assert atx.requeues >= i
 
     # push over the retry limit
     yield clock.advance(1)
@@ -526,7 +525,7 @@ def test_broadcast_recoverable_error_requeues_exceeded(
     assert broadcast_failure_hook.call_count == 1
     broadcast_failure_hook.assert_called_with(atx, error)
 
-    assert machine._requeue_counter.get(atx.id) is None  # no longer tracked
+    assert atx.requeues == machine._MAX_REDO_ATTEMPTS
 
     # The transaction failed and is not requeued
     assert len(machine.queued) == 0
@@ -965,6 +964,7 @@ def test_retry_with_errors_but_recovers(
         assert (
             machine.pending
         ), "tx is being retried but encounters retry error and remains pending"
+        assert atx.retries >= i
 
     assert strategy_1.execute.call_count > 0, "strategy #1 was called"
     # retries failed, so params shouldn't have been updated
@@ -989,7 +989,6 @@ def test_retry_with_errors_but_recovers(
 
     assert len(machine.queued) == 0
     assert machine.pending is None
-    assert machine._retry_failure_counter.get(atx.id) is None  # no longer tracked
 
     assert not machine.busy
     assert atx.final
@@ -1072,7 +1071,7 @@ def test_retry_with_errors_retries_exceeded(
     for i in range(machine._MAX_REDO_ATTEMPTS):
         assert machine.pending is not None
         yield clock.advance(1)
-        assert machine._retry_failure_counter.get(atx.id, 0) >= i
+        assert atx.retries >= i
 
     # push over retry limit
     yield clock.advance(1)
@@ -1086,7 +1085,7 @@ def test_retry_with_errors_retries_exceeded(
     assert fault_hook.call_count == 1
     fault_hook.assert_called_with(atx)
 
-    assert machine._retry_failure_counter.get(atx.id) is None  # no longer tracked
+    assert atx.retries == machine._MAX_REDO_ATTEMPTS
 
     assert len(machine.queued) == 0
     assert atx.final is False

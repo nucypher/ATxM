@@ -1,5 +1,5 @@
 from copy import copy, deepcopy
-from typing import Dict, List, Optional, Type
+from typing import List, Optional, Type
 
 from eth_account.signers.local import LocalAccount
 from eth_utils import ValidationError
@@ -139,10 +139,6 @@ class _Machine(StateMachine):
         self._task.clock = self.__CLOCK
         self._task.interval = self._IDLE_INTERVAL
 
-        # requeues/retries
-        self._requeue_counter: Dict[int, int] = dict()
-        self._retry_failure_counter: Dict[int, int] = dict()
-
         super().__init__()
 
         self.add_observer(_Machine.LogObserver())
@@ -274,17 +270,11 @@ class _Machine(StateMachine):
 
         # Outcome 2: the pending transaction was reverted (final error)
         except TransactionReverted as e:
-            # clear entry if exists
-            self._retry_failure_counter.pop(pending_tx.id, "None")
-
             self._tx_tracker.fault(fault_error=e)
             return
 
         # Outcome 3: pending transaction is finalized (final success)
         if receipt:
-            # clear entry if exists
-            self._retry_failure_counter.pop(pending_tx.id, "None")
-
             final_txhash = receipt["transactionHash"]
             confirmations = _get_confirmations(w3=self.w3, tx=pending_tx)
             self.log.info(
@@ -374,13 +364,13 @@ class _Machine(StateMachine):
         except InsufficientFunds:
             # special case re-raise insufficient funds (for now)
             # TODO #13
+            # TODO should the following also be done?
+            #  self._tx_tracker.update_failed_retry_attempt(_active_copy)
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
+            self._tx_tracker.update_failed_retry_attempt(_active_copy)
             self.__handle_retry_failure(_active_copy, e)
             return
-
-        # clear failed retries since successful
-        self._retry_failure_counter.pop(_active_copy.id, None)
 
         _active_copy.txhash = txhash
         self._tx_tracker.update_after_retry(_active_copy)
@@ -395,16 +385,12 @@ class _Machine(StateMachine):
             f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
             f"failed with updated params - {str(e)}; retry again next round"
         )
-        num_failed_retries = self._retry_failure_counter.get(pending_tx.id, 0)
-        num_failed_retries += 1
-        if num_failed_retries > self._MAX_REDO_ATTEMPTS:
+
+        if pending_tx.retries >= self._MAX_REDO_ATTEMPTS:
             log.error(
                 f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
-                f"failed for {num_failed_retries} attempts; tx will no longer be retried"
+                f"failed for { pending_tx.retries} attempts; tx will no longer be retried"
             )
-
-            # remove entry since no longer needed
-            self._retry_failure_counter.pop(pending_tx.id, None)
 
             fault_error = TransactionFaulted(
                 tx=pending_tx,
@@ -412,8 +398,6 @@ class _Machine(StateMachine):
                 message=str(e),
             )
             self._tx_tracker.fault(fault_error=fault_error)
-        else:
-            self._retry_failure_counter[pending_tx.id] = num_failed_retries
 
     def __broadcast(self):
         """
@@ -445,9 +429,6 @@ class _Machine(StateMachine):
             self.__handle_broadcast_failure(future_tx, e)
             return
 
-        # clear requeue counter since successful
-        self._requeue_counter.pop(future_tx.id, None)
-
         self._tx_tracker.morph(tx=future_tx, txhash=txhash)
         pending_tx = self._tx_tracker.pending
         if pending_tx.on_broadcast:
@@ -456,12 +437,11 @@ class _Machine(StateMachine):
     def __handle_broadcast_failure(self, future_tx: FutureTx, e: Exception):
         is_broadcast_failure = False
         if _is_recoverable_send_tx_error(e):
-            num_requeues = self._requeue_counter.get(future_tx.id, 0)
-            if num_requeues >= self._MAX_REDO_ATTEMPTS:
+            if future_tx.requeues >= self._MAX_REDO_ATTEMPTS:
                 is_broadcast_failure = True
                 log.error(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                    f"failed for {num_requeues} attempts; tx will not be requeued"
+                    f"failed for {future_tx.requeues} attempts; tx will not be requeued"
                 )
             else:
                 log.warn(
@@ -469,7 +449,6 @@ class _Machine(StateMachine):
                     f"failed - {str(e)}; requeueing tx"
                 )
                 self._tx_tracker.requeue(future_tx)
-                self._requeue_counter[future_tx.id] = num_requeues + 1
         else:
             # non-recoverable
             is_broadcast_failure = True
@@ -479,8 +458,6 @@ class _Machine(StateMachine):
             )
 
         if is_broadcast_failure:
-            # remove entry since no longer needed
-            self._requeue_counter.pop(future_tx.id, None)
             hook = future_tx.on_broadcast_failure
             if hook:
                 fire_hook(hook, future_tx, e)
