@@ -7,7 +7,12 @@ from eth_account import Account
 from eth_utils import ValidationError
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
-from web3.exceptions import Web3Exception
+from web3.exceptions import (
+    ProviderConnectionError,
+    TimeExhausted,
+    TooManyRequests,
+    Web3Exception,
+)
 
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tx import FutureTx, PendingTx
@@ -328,9 +333,11 @@ def test_broadcast_non_recoverable_error(
 
     # Queue a transaction
     broadcast_failure_hook = mocker.Mock()
+    broadcast_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
         info={"message": "something wonderful is happening..."},
     )
@@ -360,12 +367,94 @@ def test_broadcast_non_recoverable_error(
     for i in range(2):
         yield clock.advance(1)
 
+    assert broadcast_hook.call_count == 0
+
     # tx failed and not requeued
     assert machine.current_state == machine._IDLE
 
     assert len(state_observer.transitions) == 2
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
     assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.parametrize(
+    "recoverable_error", [TooManyRequests, ProviderConnectionError, TimeExhausted]
+)
+def test_broadcast_recoverable_error(
+    recoverable_error,
+    clock,
+    w3,
+    machine,
+    state_observer,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    wake, _ = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    # Queue a transaction
+    broadcast_failure_hook = mocker.Mock()
+    broadcast_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_broadcast_failure=broadcast_failure_hook,
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1
+
+    # There is one queued transaction
+    assert len(machine.queued) == 1
+
+    real_method = w3.eth.send_raw_transaction
+    # make firing of transaction fail but with recoverable error
+    error = recoverable_error("recoverable error")
+    assert _is_recoverable_send_tx_error(error)
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
+
+    # repeat some cycles; tx fails then gets requeued since error is "recoverable"
+    machine.start(now=True)
+    for i in range(5):
+        yield clock.advance(1)
+        assert len(machine.queued) == 1  # remains in queue and not broadcasted
+
+    # call real method from now on
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=real_method)
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.current_state == machine._BUSY
+
+    # The transaction is broadcasted and no longer queued
+    assert len(machine.queued) == 0
+
+    assert machine.pending == atx
+    assert isinstance(machine.pending, PendingTx)
+
+    assert isinstance(atx, PendingTx)
+    assert not atx.final
+    assert atx.txhash
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+    assert broadcast_failure_hook.call_count == 0
+
+    # tx only broadcasted and not finalized, so we are still busy
+    assert machine.current_state == machine._BUSY
+
+    assert len(state_observer.transitions) == 1
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
 
     machine.stop()
 
