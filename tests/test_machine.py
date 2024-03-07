@@ -301,6 +301,8 @@ def test_broadcast(
     yield deferLater(reactor, 0.2, lambda: None)
     assert hook.call_count == 1
 
+    assert machine._requeue_counter.get(atx.id) is None  # not tracked
+
     # tx only broadcasted and not finalized, so we are still busy
     assert machine.current_state == machine._BUSY
 
@@ -368,6 +370,8 @@ def test_broadcast_non_recoverable_error(
         yield clock.advance(1)
 
     assert broadcast_hook.call_count == 0
+
+    assert machine._requeue_counter.get(atx.id) is None  # not tracked
 
     # tx failed and not requeued
     assert machine.current_state == machine._IDLE
@@ -452,6 +456,8 @@ def test_broadcast_recoverable_error(
     yield deferLater(reactor, 0.2, lambda: None)
     assert broadcast_hook.call_count == 1
     assert broadcast_failure_hook.call_count == 0
+
+    assert machine._requeue_counter.get(atx.id) is None  # no longer tracked
 
     # tx only broadcasted and not finalized, so we are still busy
     assert machine.current_state == machine._BUSY
