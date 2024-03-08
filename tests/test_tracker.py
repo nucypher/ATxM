@@ -359,6 +359,11 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
 @pytest_twisted.inlineCallbacks
 def test_finalize_active_tx(eip1559_transaction, mocker, tx_receipt):
     tx_tracker = _TxTracker(disk_cache=False)
+
+    with pytest.raises(RuntimeError, match="No pending transaction to finalize"):
+        # there is no active tx
+        tx_tracker.finalize_active_tx(mocker.Mock())
+
     broadcast_hook = mocker.Mock()
     broadcast_failure_hook = mocker.Mock()
     fault_hook = mocker.Mock()
