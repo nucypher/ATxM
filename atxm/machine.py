@@ -371,20 +371,20 @@ class _Machine(StateMachine):
         if pending_tx.on_broadcast:
             fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
 
-    def __handle_retry_failure(self, pending_tx: PendingTx, e: Exception):
+    def __handle_retry_failure(self, attempted_tx: PendingTx, e: Exception):
         log.warn(
-            f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
+            f"[retry] transaction #atx-{attempted_tx.id}|{attempted_tx.params['nonce']} "
             f"failed with updated params - {str(e)}; retry again next round"
         )
 
-        if pending_tx.retries >= self._MAX_REDO_ATTEMPTS:
+        if attempted_tx.retries >= self._MAX_REDO_ATTEMPTS:
             log.error(
-                f"[retry] transaction #atx-{pending_tx.id}|{pending_tx.params['nonce']} "
-                f"failed for { pending_tx.retries} attempts; tx will no longer be retried"
+                f"[retry] transaction #atx-{attempted_tx.id}|{attempted_tx.params['nonce']} "
+                f"failed for { attempted_tx.retries} attempts; tx will no longer be retried"
             )
 
             fault_error = TransactionFaulted(
-                tx=pending_tx,
+                tx=attempted_tx,
                 fault=Fault.ERROR,
                 message=str(e),
             )
