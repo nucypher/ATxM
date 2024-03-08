@@ -101,9 +101,11 @@ class _TxTracker:
         log.debug(f"[tracker] tracked active transaction {tx.txhash.hex()}")
 
     def update_after_retry(self, tx: PendingTx) -> PendingTx:
+        if not self.__active:
+            raise RuntimeError("No active transaction to update")
         if tx.id != self.__active.id:
             raise RuntimeError(
-                f"Trying to update unexpected active tx: from {self.__active.id} to {tx.id}"
+                f"Mismatch between active tx ({self.__active.id}) and provided tx ({tx.id})"
             )
 
         self.__active.txhash = tx.txhash
@@ -112,9 +114,11 @@ class _TxTracker:
         return self.pending
 
     def update_failed_retry_attempt(self, tx: PendingTx):
+        if not self.__active:
+            raise RuntimeError("No active transaction to update")
         if tx.id != self.__active.id:
             raise RuntimeError(
-                f"Trying to update unexpected active tx: from {self.__active.id} to {tx.id}"
+                f"Mismatch between active tx ({self.__active.id}) and provided tx ({tx.id})"
             )
         self.__active.retries += 1
         # safety check
