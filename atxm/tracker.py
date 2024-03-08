@@ -78,7 +78,7 @@ class _TxTracker:
 
         # deserialize & restore
         self.__active = PendingTx.from_dict(active) if active else None
-        self.__queue.extend(FutureTx.from_dict(tx) for tx in queue)
+        self.__queue.extend([FutureTx.from_dict(tx) for tx in queue])
         self.finalized = {FinalizedTx.from_dict(tx) for tx in final}
         log.debug(
             f"[tracker] restored {len(queue)} transactions from cache file {self.__filepath}"
