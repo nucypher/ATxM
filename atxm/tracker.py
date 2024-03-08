@@ -172,9 +172,10 @@ class _TxTracker:
         Finalizes a pending transaction.
         Use polymorphism to transform the pending transaction into a finalized transaction.
         """
-        hook = self.__active.on_finalized
         if not self.__active:
             raise RuntimeError("No pending transaction to finalize")
+
+        hook = self.__active.on_finalized
         self.__active.receipt = receipt
         self.__active.__class__ = FinalizedTx
         tx = self.__active
