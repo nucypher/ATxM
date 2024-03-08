@@ -248,6 +248,11 @@ def test_fault(eip1559_transaction, legacy_transaction, mocker):
     # no active tx
     assert tx_tracker.pending is None
 
+    # serialization/deserialization of FaultedTx - not tracked so not done anywhere else
+    deserialized_fault_tx = FaultedTx.from_dict(tx.to_dict())
+    assert deserialized_fault_tx == tx
+    assert hash(deserialized_fault_tx) == hash(tx)
+
     # repeat with no hook
     tx_hash_2 = TxHash("0xdeadbeef2")
     assert tx_tracker.pop() == tx_2
@@ -267,6 +272,14 @@ def test_fault(eip1559_transaction, legacy_transaction, mocker):
 
     # no active tx
     assert tx_tracker.pending is None
+
+    # serialization/deserialization of FaultedTx - not tracked so not done anywhere else
+    deserialized_fault_tx_2 = FaultedTx.from_dict(tx_2.to_dict())
+    assert deserialized_fault_tx_2 == tx_2
+    assert hash(deserialized_fault_tx_2) == hash(tx_2)
+
+    assert tx_2 != tx
+    assert hash(tx_2) != hash(tx)
 
 
 def test_update_after_retry(eip1559_transaction, legacy_transaction, mocker):
