@@ -65,7 +65,7 @@ class FutureTx(AsyncTx):
     def __eq__(self, other):
         return (
             self.id == other.id
-            and self.params == other.params
+            and _serialize_tx_params(self.params) == _serialize_tx_params(other.params)
             and self.info == other.info
         )
 
@@ -105,7 +105,7 @@ class PendingTx(AsyncTx):
     def __eq__(self, other):
         return (
             self.id == other.id
-            and self.params == other.params
+            and _serialize_tx_params(self.params) == _serialize_tx_params(other.params)
             and self.txhash == other.txhash
             and self.created == other.created
         )
@@ -137,10 +137,9 @@ class FinalizedTx(AsyncTx):
         return hash((self.id, self.receipt["transactionHash"]))
 
     def __eq__(self, other):
-        return (
-            self.id == other.id
-            and self.receipt["transactionHash"] == other.receipt["transactionHash"]
-        )
+        return self.id == other.id and _serialize_tx_receipt(
+            self.receipt
+        ) == _serialize_tx_receipt(other.receipt)
 
     def to_dict(self) -> Dict:
         return {"id": self.id, "receipt": _serialize_tx_receipt(self.receipt)}
