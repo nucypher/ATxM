@@ -1,6 +1,7 @@
 import time
 
 import pytest
+import pytest_twisted
 from hexbytes import HexBytes
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
@@ -9,6 +10,34 @@ from web3.types import TxReceipt
 from atxm.exceptions import Fault, TransactionFaulted
 from atxm.tracker import _TxTracker
 from atxm.tx import FaultedTx, FinalizedTx, FutureTx, PendingTx, TxHash
+
+
+@pytest.fixture
+def tx_receipt():
+    _tx_receipt = TxReceipt(
+        {
+            "blockHash": HexBytes(
+                "0xf8be31c3eecd1f58432b211e906463b97c3cbfbe60c947c8700dff0ae7348299"
+            ),
+            "blockNumber": 1,
+            "contractAddress": None,
+            "cumulativeGasUsed": 21000,
+            "effectiveGasPrice": 1875000000,
+            "from": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
+            "gasUsed": 21000,
+            "logs": [],
+            "state_root": b"\x01",
+            "status": 1,
+            "to": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
+            "transactionHash": HexBytes(
+                "0x4798799f1cf30337b72381434d3ff56c43ee1fdfa1f812b8262069b7fb2f5a95"
+            ),
+            "transactionIndex": 0,
+            "type": 2,
+        }
+    )
+
+    return _tx_receipt
 
 
 def test_queue(eip1559_transaction, legacy_transaction, mocker):
@@ -151,6 +180,7 @@ def test_morph(eip1559_transaction, legacy_transaction, mocker):
     assert tx_1.id != tx_2.id
 
     tx_hash = TxHash("0xdeadbeef")
+    assert tx_tracker.pop() == tx_1
     pending_tx = tx_tracker.morph(tx_1, tx_hash)
 
     assert isinstance(pending_tx, PendingTx)
@@ -171,6 +201,7 @@ def test_morph(eip1559_transaction, legacy_transaction, mocker):
     assert tx_tracker.pending is not tx_2
 
     tx_2_hash = TxHash("0xdeadbeef2")
+    assert tx_tracker.pop() == tx_2
     pending_tx_2 = tx_tracker.morph(tx_2, tx_2_hash)
     assert isinstance(pending_tx_2, PendingTx)
     assert pending_tx_2 is tx_2, "same underlying object"
@@ -209,6 +240,7 @@ def test_fault(eip1559_transaction, legacy_transaction, mocker):
         tx_tracker.fault(fault_error)
 
     tx_hash = TxHash("0xdeadbeef")
+    assert tx_tracker.pop() == tx
     pending_tx = tx_tracker.morph(tx, tx_hash)
     assert tx_tracker.pending.params == tx.params
 
@@ -246,6 +278,7 @@ def test_fault(eip1559_transaction, legacy_transaction, mocker):
 
     # repeat with no hook
     tx_hash_2 = TxHash("0xdeadbeef2")
+    assert tx_tracker.pop() == tx_2
     pending_tx_2 = tx_tracker.morph(tx_2, tx_hash_2)
     assert tx_tracker.pending.params == tx_2.params
 
@@ -275,6 +308,7 @@ def test_update_after_retry(eip1559_transaction, legacy_transaction, mocker):
 
     tx_hash = TxHash("0xdeadbeef")
 
+    assert tx_tracker.pop() == tx
     tx_tracker.morph(tx, tx_hash)
     assert isinstance(tx, PendingTx)
     assert tx_tracker.pending.params == tx.params
@@ -317,6 +351,7 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
         tx_tracker.update_failed_retry_attempt(mocker.Mock(spec=PendingTx))
 
     tx_hash = TxHash("0xdeadbeef")
+    assert tx_tracker.pop() == tx
     tx_tracker.morph(tx, tx_hash)
     assert isinstance(tx, PendingTx)
     pending_tx = tx_tracker.pending
@@ -336,7 +371,8 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
         assert tx_tracker.pending.retries == i
 
 
-def test_finalize_active_tx(eip1559_transaction, mocker):
+@pytest_twisted.inlineCallbacks
+def test_finalize_active_tx(eip1559_transaction, mocker, tx_receipt):
     tx_tracker = _TxTracker(disk_cache=False)
     broadcast_hook = mocker.Mock()
     broadcast_failure_hook = mocker.Mock()
@@ -351,6 +387,7 @@ def test_finalize_active_tx(eip1559_transaction, mocker):
     )
 
     tx_hash = TxHash("0xdeadbeef")
+    assert tx_tracker.pop() == tx
     tx_tracker.morph(tx, tx_hash)
     assert isinstance(tx, PendingTx)
     pending_tx = tx_tracker.pending
@@ -359,28 +396,6 @@ def test_finalize_active_tx(eip1559_transaction, mocker):
 
     assert len(tx_tracker.finalized) == 0
 
-    tx_receipt = TxReceipt(
-        {
-            "blockHash": HexBytes(
-                "0xf8be31c3eecd1f58432b211e906463b97c3cbfbe60c947c8700dff0ae7348299"
-            ),
-            "blockNumber": 1,
-            "contractAddress": None,
-            "cumulativeGasUsed": 21000,
-            "effectiveGasPrice": 1875000000,
-            "from": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
-            "gasUsed": 21000,
-            "logs": [],
-            "state_root": b"\x01",
-            "status": 1,
-            "to": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
-            "transactionHash": HexBytes(
-                "0x4798799f1cf30337b72381434d3ff56c43ee1fdfa1f812b8262069b7fb2f5a95"
-            ),
-            "transactionIndex": 0,
-            "type": 2,
-        }
-    )
     tx_tracker.finalize_active_tx(tx_receipt)
 
     assert isinstance(tx, FinalizedTx)
