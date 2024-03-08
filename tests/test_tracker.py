@@ -214,6 +214,7 @@ def test_morph(eip1559_transaction, legacy_transaction, mocker):
     ), "copy of object always returned"
 
 
+@pytest_twisted.inlineCallbacks
 def test_fault(eip1559_transaction, legacy_transaction, mocker):
     tx_tracker = _TxTracker(disk_cache=False)
     broadcast_hook = mocker.Mock()
@@ -265,6 +266,7 @@ def test_fault(eip1559_transaction, legacy_transaction, mocker):
     assert tx.error == fault_message
 
     # check that fault hook was called
+    yield deferLater(reactor, 0.2, lambda: None)
     assert fault_hook.call_count == 1
     fault_hook.assert_called_with(tx)
 
@@ -405,6 +407,7 @@ def test_finalize_active_tx(eip1559_transaction, mocker, tx_receipt):
     # check hook called
     yield deferLater(reactor, 0.2, lambda: None)
     assert finalized_hook.call_count == 1
+    finalized_hook.assert_called_with(tx)
 
     # other hooks not called
     assert broadcast_hook.call_count == 0
