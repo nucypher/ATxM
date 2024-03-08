@@ -2,6 +2,8 @@ import time
 
 import pytest
 from hexbytes import HexBytes
+from twisted.internet import reactor
+from twisted.internet.task import deferLater
 from web3.types import TxReceipt
 
 from atxm.exceptions import Fault, TransactionFaulted
@@ -384,7 +386,11 @@ def test_finalize_active_tx(eip1559_transaction, mocker):
     assert isinstance(tx, FinalizedTx)
     assert tx.final is True
     assert tx.receipt == tx_receipt
+
+    # check hook called
+    yield deferLater(reactor, 0.2, lambda: None)
     assert finalized_hook.call_count == 1
+
     # other hooks not called
     assert broadcast_hook.call_count == 0
     assert broadcast_failure_hook.call_count == 0
