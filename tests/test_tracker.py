@@ -460,16 +460,21 @@ def test_commit_restore(
 
 
 def _compare_trackers(tracker_1: _TxTracker, tracker_2: _TxTracker):
-    # compare individual tx objects at each stage since restore doesn't care about
-    # prior state value eg. FinalizedTx doesn't care about params, because the tx was finalized
+    # 1. check FutureTxs
     assert len(tracker_1.queue) == len(tracker_2.queue)
     for i, tx in enumerate(list(tracker_1.queue)):
         assert tx == tracker_2.queue[i]
+        # ensure __hash__ is tested
+        assert hash(tx) == hash(tracker_2.queue[i])
 
+    # 2. check PendingTx
     assert tracker_1.pending == tracker_2.pending
     if tracker_1.pending:
-        assert tracker_1.pending.id == tracker_2.pending.id
+        # ensure __hash__ is tested
+        assert hash(tracker_2.pending) == hash(tracker_1.pending)
 
+    # 3. check FinalizedTxs
     assert len(tracker_1.finalized) == len(tracker_2.finalized)
+    # finalized already in a set
     for tx in tracker_1.finalized:
         assert tx in tracker_2.finalized
