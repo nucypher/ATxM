@@ -123,7 +123,7 @@ class _TxTracker:
         self.__active.retries += 1
         # safety check
         if tx is not self.__active:
-            tx.retries += 1
+            tx.retries = self.__active.retries
 
     def morph(self, tx: FutureTx, txhash: TxHash) -> PendingTx:
         """
