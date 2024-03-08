@@ -1,12 +1,17 @@
+import os
 import sys
+import tempfile
+from pathlib import Path
 from typing import List, Tuple
 
 import pytest
 from eth_account import Account
 from eth_tester import EthereumTester
+from hexbytes import HexBytes
 from statemachine import State
 from twisted.internet.task import Clock
 from twisted.logger import globalLogPublisher, textFileLogObserver
+from web3.types import TxReceipt
 
 from atxm import AutomaticTxMachine
 from atxm.logging import log
@@ -124,3 +129,40 @@ def state_observer(machine):
     machine.add_observer(_observer)
 
     return _observer
+
+
+@pytest.fixture
+def tx_receipt():
+    _tx_receipt = TxReceipt(
+        {
+            "blockHash": HexBytes(
+                "0xf8be31c3eecd1f58432b211e906463b97c3cbfbe60c947c8700dff0ae7348299"
+            ),
+            "blockNumber": 1,
+            "contractAddress": None,
+            "cumulativeGasUsed": 21000,
+            "effectiveGasPrice": 1875000000,
+            "from": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
+            "gasUsed": 21000,
+            "logs": [],
+            "root": "0x01",
+            "status": 1,
+            "to": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
+            "transactionHash": HexBytes(
+                "0x4798799f1cf30337b72381434d3ff56c43ee1fdfa1f812b8262069b7fb2f5a95"
+            ),
+            "transactionIndex": 0,
+            "type": 2,
+        }
+    )
+
+    return _tx_receipt
+
+
+@pytest.fixture
+def tempfile_path():
+    fd, path = tempfile.mkstemp()
+    path = Path(path)
+    yield path
+    os.close(fd)
+    path.unlink()

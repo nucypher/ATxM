@@ -2,42 +2,12 @@ import time
 
 import pytest
 import pytest_twisted
-from hexbytes import HexBytes
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
-from web3.types import TxReceipt
 
 from atxm.exceptions import Fault, TransactionFaulted
 from atxm.tracker import _TxTracker
 from atxm.tx import FaultedTx, FinalizedTx, FutureTx, PendingTx, TxHash
-
-
-@pytest.fixture
-def tx_receipt():
-    _tx_receipt = TxReceipt(
-        {
-            "blockHash": HexBytes(
-                "0xf8be31c3eecd1f58432b211e906463b97c3cbfbe60c947c8700dff0ae7348299"
-            ),
-            "blockNumber": 1,
-            "contractAddress": None,
-            "cumulativeGasUsed": 21000,
-            "effectiveGasPrice": 1875000000,
-            "from": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
-            "gasUsed": 21000,
-            "logs": [],
-            "state_root": b"\x01",
-            "status": 1,
-            "to": "0x1e59ce931B4CFea3fe4B875411e280e173cB7A9C",
-            "transactionHash": HexBytes(
-                "0x4798799f1cf30337b72381434d3ff56c43ee1fdfa1f812b8262069b7fb2f5a95"
-            ),
-            "transactionIndex": 0,
-            "type": 2,
-        }
-    )
-
-    return _tx_receipt
 
 
 def test_queue(eip1559_transaction, legacy_transaction, mocker):
@@ -418,5 +388,88 @@ def test_finalize_active_tx(eip1559_transaction, mocker, tx_receipt):
     assert tx_tracker.pending is None
 
     assert len(tx_tracker.finalized) == 1
-    for t in tx_tracker.finalized:
-        assert t == tx
+    assert tx in tx_tracker.finalized
+
+
+def test_commit_restore(
+    eip1559_transaction, legacy_transaction, tx_receipt, tempfile_path
+):
+    tx_tracker = _TxTracker(disk_cache=True, filepath=tempfile_path)
+
+    # check commit restore
+    tx_tracker.commit()
+    restored_tracker = _TxTracker(disk_cache=True, filepath=tempfile_path)
+    _compare_trackers(tx_tracker, restored_tracker)
+
+    tx_1 = tx_tracker.queue_tx(params=eip1559_transaction, info={"name": "tx_1"})
+    tx_2 = tx_tracker.queue_tx(params=legacy_transaction)
+    tx_3 = tx_tracker.queue_tx(params=eip1559_transaction, info={"name": "tx_3"})
+    tx_4 = tx_tracker.queue_tx(params=legacy_transaction)
+    tx_5 = tx_tracker.queue_tx(params=eip1559_transaction, info={"name": "tx_5"})
+    tx_6 = tx_tracker.queue_tx(params=legacy_transaction)
+
+    # max tx_1 finalized
+    tx_hash = TxHash("0xdeadbeef")
+    assert tx_tracker.pop() == tx_1
+    tx_tracker.morph(tx_1, tx_hash)
+
+    tx_tracker.finalize_active_tx(tx_receipt)
+    assert len(tx_tracker.finalized) == 1
+
+    # check commit restore
+    tx_tracker.commit()
+    restored_tracker = _TxTracker(disk_cache=True, filepath=tempfile_path)
+    _compare_trackers(tx_tracker, restored_tracker)
+
+    # make tx_2 finalized
+    tx_hash_2 = TxHash("0xdeadbeef2")
+    assert tx_tracker.pop() == tx_2
+    tx_tracker.morph(tx_2, tx_hash_2)
+
+    tx_tracker.finalize_active_tx(tx_receipt)
+    assert len(tx_tracker.finalized) == 2
+    assert tx_1 in tx_tracker.finalized
+    assert tx_2 in tx_tracker.finalized
+
+    # check commit restore
+    tx_tracker.commit()
+    restored_tracker = _TxTracker(disk_cache=True, filepath=tempfile_path)
+    _compare_trackers(tx_tracker, restored_tracker)
+
+    # make tx_3 active
+    tx_hash_3 = TxHash("0xdeadbeef3")
+    assert tx_tracker.pop() == tx_3
+    tx_tracker.morph(tx_3, tx_hash_3)
+    assert tx_tracker.pending == tx_3
+
+    # check commit restore
+    tx_tracker.commit()
+    restored_tracker = _TxTracker(disk_cache=True, filepath=tempfile_path)
+    _compare_trackers(tx_tracker, restored_tracker)
+
+    # tx_4,5,6 still queued
+    assert len(tx_tracker.queue) == 3
+    assert tx_4 in tx_tracker.queue
+    assert tx_5 in tx_tracker.queue
+    assert tx_6 in tx_tracker.queue
+
+    # check commit restore
+    tx_tracker.commit()
+    restored_tracker = _TxTracker(disk_cache=True, filepath=tempfile_path)
+    _compare_trackers(tx_tracker, restored_tracker)
+
+
+def _compare_trackers(tracker_1: _TxTracker, tracker_2: _TxTracker):
+    # compare individual tx objects at each stage since restore doesn't care about
+    # prior state value eg. FinalizedTx doesn't care about params, because the tx was finalized
+    assert len(tracker_1.queue) == len(tracker_2.queue)
+    for i, tx in enumerate(list(tracker_1.queue)):
+        assert tx == tracker_2.queue[i]
+
+    assert tracker_1.pending == tracker_2.pending
+    if tracker_1.pending:
+        assert tracker_1.pending.id == tracker_2.pending.id
+
+    assert len(tracker_1.finalized) == len(tracker_2.finalized)
+    for tx in tracker_1.finalized:
+        assert tx in tracker_2.finalized
