@@ -5,7 +5,7 @@ from typing import Callable, Dict, Optional
 from eth_typing import ChecksumAddress
 from eth_utils import encode_hex
 from hexbytes import HexBytes
-from web3.types import TxData, TxParams, TxReceipt
+from web3.types import TxParams, TxReceipt
 
 from atxm.exceptions import Fault
 
@@ -85,7 +85,6 @@ class PendingTx(AsyncTx):
     final: bool = field(default=False, init=False)
     txhash: TxHash
     created: int
-    data: Optional[TxData] = None
 
     def __hash__(self) -> int:
         return hash(self.txhash)
@@ -95,7 +94,6 @@ class PendingTx(AsyncTx):
             "id": self.id,
             "txhash": self.txhash.hex(),
             "created": self.created,
-            "data": self.data,
         }
 
     @classmethod
@@ -104,7 +102,6 @@ class PendingTx(AsyncTx):
             id=int(data["id"]),
             txhash=HexBytes(data["txhash"]),
             created=int(data["created"]),
-            data=dict(data) if data else dict(),
         )
 
 

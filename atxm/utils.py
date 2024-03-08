@@ -62,7 +62,6 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     """
     try:
         txdata = w3.eth.get_transaction(pending_tx.txhash)
-        pending_tx.data = txdata
     except TransactionNotFound:
         log.error(f"[error] Transaction {pending_tx.txhash.hex()} not found")
         return
