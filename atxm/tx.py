@@ -1,3 +1,4 @@
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
@@ -5,7 +6,7 @@ from typing import Callable, Dict, Optional
 from eth_typing import ChecksumAddress
 from eth_utils import encode_hex
 from hexbytes import HexBytes
-from web3.types import PendingTx, TxData, TxParams, TxReceipt
+from web3.types import TxParams, TxReceipt
 
 from atxm.exceptions import Fault
 
@@ -17,7 +18,10 @@ class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
     fault: Optional[Fault] = field(default=None, init=False)
-    on_broadcast: Optional[Callable[[PendingTx], None]] = field(
+    on_broadcast: Optional[Callable[["PendingTx"], None]] = field(
+        default=None, init=False
+    )
+    on_broadcast_failure: Optional[Callable[["FutureTx", Exception], None]] = field(
         default=None, init=False
     )
     on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
@@ -28,11 +32,13 @@ class AsyncTx(ABC):
     def __repr__(self):
         return f"<{self.__class__.__name__} id={self.id} final={self.final}>"
 
+    @abstractmethod
     def __hash__(self):
-        return hash(self.id)
+        raise NotImplementedError
 
+    @abstractmethod
     def __eq__(self, other):
-        return self.id == other.id
+        raise NotImplementedError
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -48,18 +54,28 @@ class AsyncTx(ABC):
 
 @dataclass
 class FutureTx(AsyncTx):
-    final: bool = field(default=False, init=False)
     params: TxParams
-    _from: ChecksumAddress
     info: Optional[Dict] = None
+    requeues: int = field(default=0, init=False)
+    final: bool = field(default=False, init=False)
 
     def __hash__(self):
-        return hash(self.id)
+        return hash(json.dumps(self.to_dict()))
+
+    def __eq__(self, other):
+        return (
+            self.id == other.id
+            and _serialize_tx_params(self.params) == _serialize_tx_params(other.params)
+            and self.info == other.info
+        )
+
+    @property
+    def _from(self) -> ChecksumAddress:
+        return self.params["from"]
 
     def to_dict(self) -> Dict:
         return {
             "id": self.id,
-            "from": self._from,
             "params": _serialize_tx_params(self.params),
             "info": self.info,
         }
@@ -68,37 +84,47 @@ class FutureTx(AsyncTx):
     def from_dict(cls, data: Dict):
         return cls(
             id=int(data["id"]),
-            _from=data["from"],
             params=TxParams(data["params"]),
-            info=dict(data["info"]),
+            info=dict(data["info"]) if data["info"] else None,
         )
 
 
 @dataclass
 class PendingTx(AsyncTx):
+    retries: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
+    params: TxParams
     txhash: TxHash
     created: int
-    data: Optional[TxData] = None
 
     def __hash__(self) -> int:
-        return hash(self.txhash)
+        # don't use "params" or "txhash" for hash because they can change
+        # over the object's lifetime
+        return hash((self.id, self.created))
+
+    def __eq__(self, other):
+        return (
+            self.id == other.id
+            and _serialize_tx_params(self.params) == _serialize_tx_params(other.params)
+            and self.txhash == other.txhash
+            and self.created == other.created
+        )
 
     def to_dict(self) -> Dict:
         return {
             "id": self.id,
+            "params": _serialize_tx_params(self.params),
             "txhash": self.txhash.hex(),
             "created": self.created,
-            "data": self.data,
         }
 
     @classmethod
     def from_dict(cls, data: Dict):
         return cls(
             id=int(data["id"]),
+            params=TxParams(data["params"]),
             txhash=HexBytes(data["txhash"]),
             created=int(data["created"]),
-            data=dict(data) if data else dict(),
         )
 
 
@@ -108,7 +134,12 @@ class FinalizedTx(AsyncTx):
     receipt: TxReceipt
 
     def __hash__(self) -> int:
-        return hash(self.receipt["transactionHash"])
+        return hash((self.id, self.receipt["transactionHash"]))
+
+    def __eq__(self, other):
+        return self.id == other.id and _serialize_tx_receipt(
+            self.receipt
+        ) == _serialize_tx_receipt(other.receipt)
 
     def to_dict(self) -> Dict:
         return {"id": self.id, "receipt": _serialize_tx_receipt(self.receipt)}
@@ -130,7 +161,14 @@ class FaultedTx(AsyncTx):
     error: Optional[str] = None
 
     def __hash__(self) -> int:
-        return hash(self.id)
+        return hash(json.dumps(self.to_dict()))
+
+    def __eq__(self, other):
+        return (
+            self.id == other.id
+            and self.fault == other.fault
+            and self.error == other.error
+        )
 
     def to_dict(self) -> Dict:
         return {"id": self.id, "error": str(self.error), "fault": self.fault.value}

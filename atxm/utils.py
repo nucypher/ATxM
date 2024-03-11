@@ -4,16 +4,20 @@ from typing import Callable, Optional, Union
 from cytoolz import memoize
 from twisted.internet import reactor
 from web3 import Web3
-from web3.exceptions import TransactionNotFound
+from web3.exceptions import (
+    ProviderConnectionError,
+    TimeExhausted,
+    TooManyRequests,
+    TransactionNotFound,
+)
 from web3.types import TxData, TxParams
-from web3.types import RPCError, TxReceipt, Wei
+from web3.types import TxReceipt, Wei
 
 from atxm.exceptions import (
-    InsufficientFunds,
     TransactionReverted,
 )
 from atxm.logging import log
-from atxm.tx import AsyncTx, FinalizedTx, FutureTx, PendingTx, TxHash
+from atxm.tx import AsyncTx, FinalizedTx, PendingTx, TxHash
 
 
 @memoize
@@ -31,10 +35,12 @@ def _get_average_blocktime(w3: Web3, sample_size: int) -> float:
     return average_block_time
 
 
-def _log_gas_weather(base_fee: Wei, tip: Wei) -> None:
+def _log_gas_weather(base_fee: Wei, suggested_tip: Wei) -> None:
     base_fee_gwei = Web3.from_wei(base_fee, "gwei")
-    tip_gwei = Web3.from_wei(tip, "gwei")
-    log.info(f"Gas conditions: base {base_fee_gwei} gwei | tip {tip_gwei} gwei")
+    tip_gwei = Web3.from_wei(suggested_tip, "gwei")
+    log.info(
+        f"[gas] Gas conditions: base {base_fee_gwei} gwei | suggested tip {tip_gwei} gwei"
+    )
 
 
 def _get_receipt_from_txhash(w3: Web3, txhash: TxHash) -> Optional[TxReceipt]:
@@ -56,7 +62,6 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     """
     try:
         txdata = w3.eth.get_transaction(pending_tx.txhash)
-        pending_tx.data = txdata
     except TransactionNotFound:
         log.error(f"[error] Transaction {pending_tx.txhash.hex()} not found")
         return
@@ -96,7 +101,7 @@ def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
     return confirmations
 
 
-def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
+def fire_hook(hook: Callable, tx: AsyncTx, *args) -> None:
     """
     Fire a callable in a separate thread.
     Try exceptionally hard not to crash the async tasks during dispatch.
@@ -106,31 +111,12 @@ def fire_hook(hook: Callable, tx: AsyncTx, *args, **kwargs) -> None:
         def _hook() -> None:
             """I'm inside a thread!"""
             try:
-                hook(tx, *args, **kwargs)
+                hook(tx, *args)
             except Exception as e:
                 log.warn(f"[hook] raised {e}")
 
         reactor.callInThread(_hook)
         log.info(f"[hook] fired hook {hook} for transaction #atx-{tx.id}")
-
-
-def _handle_rpc_error(e: Exception, tx: FutureTx) -> None:
-    try:
-        error = RPCError(**e.args[0])
-    except TypeError:
-        log.critical(
-            f"[error] transaction #atx-{tx.id}|{tx.params['nonce']} failed with {e}"
-        )
-    else:
-        log.critical(
-            f"[error] transaction #atx-{tx.id}|{tx.params['nonce']} failed with {error['code']} | {error['message']}"
-        )
-        if error["code"] == -32000:
-            if "insufficient funds" in error["message"]:
-                raise InsufficientFunds
-        hook = tx.on_fault
-        if hook:
-            fire_hook(hook=hook, tx=tx, error=e)
 
 
 def _make_tx_params(data: TxData) -> TxParams:
@@ -147,6 +133,7 @@ def _make_tx_params(data: TxData) -> TxParams:
             "nonce": data["nonce"],
             "chainId": data["chainId"],
             "gas": data["gas"],
+            "from": data["from"],
             "to": data["to"],
             "value": data["value"],
             "data": data.get("data", b""),
@@ -165,3 +152,7 @@ def _make_tx_params(data: TxData) -> TxParams:
         raise ValueError(f"unrecognized tx data: {data}")
 
     return params
+
+
+def _is_recoverable_send_tx_error(e: Exception) -> bool:
+    return isinstance(e, (TooManyRequests, ProviderConnectionError, TimeExhausted))
