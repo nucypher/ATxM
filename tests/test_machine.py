@@ -636,10 +636,12 @@ def test_finalize(
     # async transaction reflects finalized state
     assert atx.final
     assert atx.receipt
+    assert atx.successful
 
     # wait for the hook to be called
     yield deferLater(reactor, 0.2, lambda: None)
     assert finalized_hook.call_count == 1
+    finalized_hook.assert_called_with(atx)
 
     yield clock.advance(1)
 

@@ -380,6 +380,7 @@ def test_finalize_active_tx(receipt_status, eip1559_transaction, tx_receipt, moc
     yield deferLater(reactor, 0.2, lambda: None)
     assert finalized_hook.call_count == 1
     finalized_hook.assert_called_with(tx)
+    assert tx.successful == (receipt_status == 1)
 
     # other hooks not called
     assert broadcast_hook.call_count == 0
