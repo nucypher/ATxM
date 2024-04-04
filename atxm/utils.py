@@ -90,13 +90,17 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
 
 
 def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
-    current_block = w3.eth.block_number
-    tx_receipt = _get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
+    if isinstance(tx, FinalizedTx):
+        tx_receipt = tx.receipt
+    else:
+        tx_receipt = _get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
+
     if not tx_receipt:
         log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
         return 0
 
     tx_block = tx_receipt["blockNumber"]
+    current_block = w3.eth.block_number
     confirmations = current_block - tx_block
     return confirmations
 
