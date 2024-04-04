@@ -12,16 +12,16 @@ def test_machine(
     machine,
     clock,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     assert not machine.busy
     async_txs = machine.queue_transactions(
         params=[legacy_transaction, eip1559_transaction],
         signer=account,
         info={"message": "something wonderful is happening..."},
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert len(async_txs) == 2

@@ -2,22 +2,21 @@ import pytest
 import pytest_twisted
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
-from web3.types import TxReceipt
 
 from atxm.exceptions import Fault, TransactionFaulted
 from atxm.strategies import AsyncTxStrategy
 from atxm.tx import FaultedTx
-from atxm.utils import _get_receipt_from_txhash
 
 
-def _broadcast_tx(
-    machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
-):
+def _broadcast_tx(machine, eip1559_transaction, account, mocker):
+    fault_hook = mocker.Mock()
+
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
+        on_broadcast_failure=mocker.Mock(),
         on_fault=fault_hook,
+        on_finalized=mocker.Mock(),
     )
 
     # broadcast tx
@@ -27,7 +26,7 @@ def _broadcast_tx(
     assert atx.final is False
     assert atx.fault is None
 
-    return atx
+    return atx, fault_hook
 
 
 @pytest_twisted.inlineCallbacks
@@ -51,36 +50,6 @@ def _verify_tx_faulted(machine, atx, fault_hook, expected_fault: Fault):
     assert atx.final is False
 
 
-def test_revert(
-    w3,
-    machine,
-    clock,
-    eip1559_transaction,
-    account,
-    interval,
-    mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
-    mocker,
-):
-    atx = _broadcast_tx(
-        machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
-    )
-
-    assert machine.pending
-
-    # tx auto-mined; force receipt to symbolize a revert of the tx
-    receipt = _get_receipt_from_txhash(w3, atx.txhash)
-    revert_receipt = dict(receipt)
-    revert_receipt["status"] = 0
-
-    mocker.patch.object(
-        w3.eth, "get_transaction_receipt", return_value=TxReceipt(revert_receipt)
-    )
-
-    _verify_tx_faulted(machine, atx, fault_hook, expected_fault=Fault.REVERT)
-
-
 @pytest.mark.usefixtures("disable_auto_mining")
 def test_strategy_fault(
     w3,
@@ -90,8 +59,6 @@ def test_strategy_fault(
     account,
     interval,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
     mocker,
 ):
     faulty_strategy = mocker.Mock(spec=AsyncTxStrategy)
@@ -99,9 +66,7 @@ def test_strategy_fault(
     # TODO: consider whether strategies should just be overridden through the constructor
     machine._strategies.insert(0, faulty_strategy)  # add first
 
-    atx = _broadcast_tx(
-        machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
-    )
+    atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
 
     faulty_message = "mocked fault"
     faulty_strategy.execute.side_effect = TransactionFaulted(
@@ -122,12 +87,9 @@ def test_timeout_strategy_fault(
     account,
     interval,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
-    atx = _broadcast_tx(
-        machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
-    )
+    atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
 
     atx.created -= 9999999999
 

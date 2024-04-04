@@ -18,10 +18,12 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
 
     broadcast_failure_hook_1 = mocker.Mock()
     fault_hook_1 = mocker.Mock()
+    finalized_hook_1 = mocker.Mock()
     tx = tx_tracker.queue_tx(
         params=eip1559_transaction,
         on_broadcast_failure=broadcast_failure_hook_1,
         on_fault=fault_hook_1,
+        on_finalized=finalized_hook_1,
     )
     assert len(tx_tracker.queue) == 1
     assert isinstance(tx, FutureTx)
@@ -39,11 +41,13 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     tx_2_info = {"description": "it's me!", "message": "me who?"}
     broadcast_failure_hook_2 = mocker.Mock()
     fault_hook_2 = mocker.Mock()
+    finalized_hook_2 = mocker.Mock()
     tx_2 = tx_tracker.queue_tx(
         params=legacy_transaction,
         info=tx_2_info,
         on_broadcast_failure=broadcast_failure_hook_2,
         on_fault=fault_hook_2,
+        on_finalized=finalized_hook_2,
     )
     assert len(tx_tracker.queue) == 2
     assert isinstance(tx_2, FutureTx)
@@ -62,18 +66,18 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     assert tx.on_broadcast is None
     assert tx.on_broadcast_failure == broadcast_failure_hook_1
     assert tx.on_fault == fault_hook_1
-    assert tx.on_finalized is None
+    assert tx.on_finalized == finalized_hook_1
 
     broadcast_failure_hook_3 = mocker.Mock()
     fault_hook_3 = mocker.Mock()
+    finalized_hook_3 = mocker.Mock()
     broadcast_hook = mocker.Mock()
-    finalized_hook = mocker.Mock()
     tx_3 = tx_tracker.queue_tx(
         params=eip1559_transaction,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook_3,
         on_fault=fault_hook_3,
-        on_finalized=finalized_hook,
+        on_finalized=finalized_hook_3,
     )
     assert tx_3.params == eip1559_transaction
     assert tx_3.info is None
@@ -83,7 +87,7 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     assert tx_3.on_broadcast == broadcast_hook
     assert tx_3.on_broadcast_failure == broadcast_failure_hook_3
     assert tx_3.on_fault == fault_hook_3
-    assert tx_3.on_finalized == finalized_hook
+    assert tx_3.on_finalized == finalized_hook_3
 
     assert len(tx_tracker.queue) == 3
     assert isinstance(tx_3, FutureTx)
@@ -93,11 +97,11 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     assert len(tx_tracker.finalized) == 0
 
 
-def test_morph(
-    eip1559_transaction, legacy_transaction, broadcast_failure_hook, fault_hook, mocker
-):
+def test_morph(eip1559_transaction, legacy_transaction, mocker):
     tx_tracker = _TxTracker(disk_cache=False)
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
     finalized_hook = mocker.Mock()
     tx_1 = tx_tracker.queue_tx(
         params=eip1559_transaction,
@@ -110,6 +114,7 @@ def test_morph(
         params=legacy_transaction,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
     assert tx_1.id != tx_2.id
 
@@ -152,11 +157,11 @@ def test_morph(
 
 
 @pytest_twisted.inlineCallbacks
-def test_fault(
-    eip1559_transaction, legacy_transaction, broadcast_failure_hook, fault_hook, mocker
-):
+def test_fault(eip1559_transaction, legacy_transaction, mocker):
     tx_tracker = _TxTracker(disk_cache=False)
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
     finalized_hook = mocker.Mock()
     tx = tx_tracker.queue_tx(
         params=eip1559_transaction,
@@ -169,6 +174,7 @@ def test_fault(
         params=legacy_transaction,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert len(tx_tracker.queue) == 2
@@ -232,11 +238,11 @@ def test_fault(
     assert tx_tracker.pending.params == tx_2.params
 
     fault_error = TransactionFaulted(
-        tx=pending_tx_2, fault=Fault.REVERT, message=fault_message
+        tx=pending_tx_2, fault=Fault.TIMEOUT, message=fault_message
     )
     tx_tracker.fault(fault_error)
     assert isinstance(tx_2, FaultedTx)
-    assert tx_2.fault == Fault.REVERT
+    assert tx_2.fault == Fault.TIMEOUT
     assert tx_2.error == fault_message
 
     # no active tx
@@ -257,6 +263,7 @@ def test_update_active_after_retry(eip1559_transaction, legacy_transaction, mock
         params=eip1559_transaction,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert tx_tracker.pending is None
@@ -304,6 +311,7 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
         params=eip1559_transaction,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert tx_tracker.pending is None
@@ -331,10 +339,9 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
         assert tx_tracker.pending.retries == i
 
 
+@pytest.mark.parametrize("receipt_status", [0, 1])  # failure, success
 @pytest_twisted.inlineCallbacks
-def test_finalize_active_tx(
-    eip1559_transaction, tx_receipt, broadcast_failure_hook, fault_hook, mocker
-):
+def test_finalize_active_tx(receipt_status, eip1559_transaction, tx_receipt, mocker):
     tx_tracker = _TxTracker(disk_cache=False)
 
     with pytest.raises(RuntimeError, match="No pending transaction to finalize"):
@@ -342,6 +349,8 @@ def test_finalize_active_tx(
         tx_tracker.finalize_active_tx(mocker.Mock())
 
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
     finalized_hook = mocker.Mock()
     tx = tx_tracker.queue_tx(
         params=eip1559_transaction,
@@ -360,6 +369,7 @@ def test_finalize_active_tx(
 
     assert len(tx_tracker.finalized) == 0
 
+    tx_receipt["status"] = receipt_status
     tx_tracker.finalize_active_tx(tx_receipt)
 
     assert isinstance(tx, FinalizedTx)
@@ -400,27 +410,39 @@ def test_commit_restore(
         info={"name": "tx_1"},
         on_broadcast_failure=hook,
         on_fault=hook,
+        on_finalized=hook,
     )
     tx_2 = tx_tracker.queue_tx(
-        params=legacy_transaction, on_broadcast_failure=hook, on_fault=hook
+        params=legacy_transaction,
+        on_broadcast_failure=hook,
+        on_fault=hook,
+        on_finalized=hook,
     )
     tx_3 = tx_tracker.queue_tx(
         params=eip1559_transaction,
         info={"name": "tx_3"},
         on_broadcast_failure=hook,
         on_fault=hook,
+        on_finalized=hook,
     )
     tx_4 = tx_tracker.queue_tx(
-        params=legacy_transaction, on_broadcast_failure=hook, on_fault=hook
+        params=legacy_transaction,
+        on_broadcast_failure=hook,
+        on_fault=hook,
+        on_finalized=hook,
     )
     tx_5 = tx_tracker.queue_tx(
         params=eip1559_transaction,
         info={"name": "tx_5"},
         on_broadcast_failure=hook,
         on_fault=hook,
+        on_finalized=hook,
     )
     tx_6 = tx_tracker.queue_tx(
-        params=legacy_transaction, on_broadcast_failure=hook, on_fault=hook
+        params=legacy_transaction,
+        on_broadcast_failure=hook,
+        on_fault=hook,
+        on_finalized=hook,
     )
 
     # max tx_1 finalized

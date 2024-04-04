@@ -55,8 +55,7 @@ def test_queue_from_parameter_handling(
     account,
     eip1559_transaction,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     # 1. "from" parameter does not match account
     with pytest.raises(ValueError):
@@ -72,8 +71,9 @@ def test_queue_from_parameter_handling(
         _ = machine.queue_transaction(
             params=tx_params,
             signer=account,
-            on_broadcast_failure=broadcast_failure_hook,
-            on_fault=fault_hook,
+            on_broadcast_failure=mocker.Mock(),
+            on_fault=mocker.Mock(),
+            on_finalized=mocker.Mock(),
         )
 
     # 2. no "from" parameter
@@ -84,8 +84,9 @@ def test_queue_from_parameter_handling(
     atx = machine.queue_transaction(
         params=tx_params,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
     assert atx.params["from"] == account.address, "same as signer account"
 
@@ -95,8 +96,9 @@ def test_queue_from_parameter_handling(
     atx = machine.queue_transaction(
         params=tx_params,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
     assert atx.params["from"] == account.address
 
@@ -108,8 +110,7 @@ def test_queue(
     account,
     eip1559_transaction,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     wake, _ = mock_wake_sleep
 
@@ -122,8 +123,9 @@ def test_queue(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert isinstance(atx, FutureTx)
@@ -166,6 +168,7 @@ def test_wake_after_queuing_when_idle_and_not_already_running(
         info={"message": "something wonderful is happening..."},
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert stop_spy.call_count == 0, "no task to stop"
@@ -200,6 +203,7 @@ def test_wake_after_queuing_when_idle_and_already_running(
         info={"message": "something wonderful is happening..."},
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert stop_spy.call_count == 1, "task stopped"
@@ -216,8 +220,7 @@ def test_wake_no_call_after_queuing_when_already_busy(
     eip1559_transaction,
     account,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     wake, _ = mock_wake_sleep
 
@@ -228,8 +231,9 @@ def test_wake_no_call_after_queuing_when_already_busy(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert wake.call_count == 1
@@ -242,8 +246,9 @@ def test_wake_no_call_after_queuing_when_already_busy(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert wake.call_count == 1  # remains unchanged
@@ -254,8 +259,7 @@ def test_wake_no_call_after_queuing_when_already_paused(
     eip1559_transaction,
     account,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     wake, sleep = mock_wake_sleep
 
@@ -272,8 +276,9 @@ def test_wake_no_call_after_queuing_when_already_paused(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     assert wake.call_count == 0
@@ -289,8 +294,6 @@ def test_broadcast(
     account,
     mocker,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
 ):
     wake, _ = mock_wake_sleep
 
@@ -303,8 +306,9 @@ def test_broadcast(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -357,8 +361,6 @@ def test_broadcast_non_recoverable_error(
     state_observer,
     eip1559_transaction,
     account,
-    broadcast_failure_hook,
-    fault_hook,
     mocker,
     mock_wake_sleep,
 ):
@@ -369,12 +371,14 @@ def test_broadcast_non_recoverable_error(
 
     # Queue a transaction
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -430,8 +434,6 @@ def test_broadcast_recoverable_error(
     account,
     mocker,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
 ):
     # need more freedom with redo attempts for test
     mocker.patch.object(machine, "_MAX_RETRY_ATTEMPTS", 10)
@@ -442,14 +444,15 @@ def test_broadcast_recoverable_error(
     assert not machine.busy
 
     # Queue a transaction
-    broadcast_failure_hook = mocker.Mock()
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -517,8 +520,6 @@ def test_broadcast_recoverable_error_retries_exceeded(
     account,
     mocker,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
 ):
     wake, _ = mock_wake_sleep
 
@@ -527,12 +528,14 @@ def test_broadcast_recoverable_error_retries_exceeded(
 
     # Queue a transaction
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -595,11 +598,11 @@ def test_finalize(
     assert machine.current_state == machine._IDLE
 
     # Queue a transaction
-    on_finalized_hook = mocker.Mock()
+    finalized_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_finalized=on_finalized_hook,
+        on_finalized=finalized_hook,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
     )
@@ -636,7 +639,7 @@ def test_finalize(
 
     # wait for the hook to be called
     yield deferLater(reactor, 0.2, lambda: None)
-    assert on_finalized_hook.call_count == 1
+    assert finalized_hook.call_count == 1
 
     yield clock.advance(1)
 
@@ -659,8 +662,7 @@ def test_follow(
     eip1559_transaction,
     account,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -668,8 +670,9 @@ def test_follow(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -728,6 +731,7 @@ def test_use_strategies_speedup_used(
         on_broadcast=broadcast_hook,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     update_spy = mocker.spy(machine._tx_tracker, "update_active_after_retry")
@@ -800,8 +804,6 @@ def test_use_strategies_timeout_used(
     account,
     mocker,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
 ):
     fault_hook = mocker.Mock()
 
@@ -811,8 +813,9 @@ def test_use_strategies_timeout_used(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
+        on_broadcast_failure=mocker.Mock(),
         on_fault=fault_hook,
+        on_finalized=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -887,6 +890,7 @@ def test_use_strategies_that_dont_make_updates(
         on_broadcast=broadcast_hook,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -961,8 +965,6 @@ def test_retry_with_errors_but_recovers(
     account,
     mocker,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
 ):
     # need more freedom with redo attempts for test
     mocker.patch.object(machine, "_MAX_RETRY_ATTEMPTS", 10)
@@ -981,12 +983,14 @@ def test_retry_with_errors_but_recovers(
     assert machine.current_state == machine._IDLE
 
     broadcast_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_fault=fault_hook,
         on_broadcast=broadcast_hook,
-        on_broadcast_failure=broadcast_failure_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -1074,8 +1078,6 @@ def test_retry_with_errors_retries_exceeded(
     account,
     mocker,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
 ):
     # strategies that don't make updates
     strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
@@ -1091,12 +1093,14 @@ def test_retry_with_errors_retries_exceeded(
     assert machine.current_state == machine._IDLE
 
     broadcast_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
+        on_broadcast_failure=mocker.Mock(),
         on_fault=fault_hook,
         on_broadcast=broadcast_hook,
+        on_finalized=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -1194,6 +1198,7 @@ def test_pause_when_busy(clock, machine, eip1559_transaction, account, mocker):
         signer=account,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -1232,8 +1237,7 @@ def test_simple_state_transitions(
     eip1559_transaction,
     account,
     mock_wake_sleep,
-    broadcast_failure_hook,
-    fault_hook,
+    mocker,
 ):
     assert machine.current_state == machine._IDLE
 
@@ -1262,8 +1266,9 @@ def test_simple_state_transitions(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast_failure=broadcast_failure_hook,
-        on_fault=fault_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
     )
 
     # broadcast tx
