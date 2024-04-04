@@ -56,7 +56,7 @@ class AsyncTx(ABC):
 class FutureTx(AsyncTx):
     params: TxParams
     info: Optional[Dict] = None
-    requeues: int = field(default=0, init=False)
+    retries: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
 
     def __hash__(self):

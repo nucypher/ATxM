@@ -92,8 +92,8 @@ class _Machine(StateMachine):
     _BLOCK_INTERVAL = 20  # ~20 blocks
     _BLOCK_SAMPLE_SIZE = 10_000  # blocks
 
-    # max requeues/retries
-    _MAX_REDO_ATTEMPTS = 3
+    # max retries (broadcast or active)
+    _MAX_RETRY_ATTEMPTS = 3
 
     class LogObserver:
         """StateMachine observer for logging information about state/transitions."""
@@ -359,12 +359,12 @@ class _Machine(StateMachine):
             #  self._tx_tracker.update_failed_retry_attempt(_active_copy)
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            self._tx_tracker.update_failed_retry_attempt(_active_copy)
+            self._tx_tracker.update_active_after_failed_retry_attempt(_active_copy)
             self.__handle_retry_failure(_active_copy, e)
             return
 
         _active_copy.txhash = txhash
-        self._tx_tracker.update_after_retry(_active_copy)
+        self._tx_tracker.update_active_after_retry(_active_copy)
 
         pending_tx = self._tx_tracker.pending
         self.log.info(f"[retry] transaction #{pending_tx.id} has been re-broadcasted")
@@ -377,7 +377,7 @@ class _Machine(StateMachine):
             f"failed with updated params - {str(e)}; retry again next round"
         )
 
-        if attempted_tx.retries >= self._MAX_REDO_ATTEMPTS:
+        if attempted_tx.retries >= self._MAX_RETRY_ATTEMPTS:
             log.error(
                 f"[retry] transaction #atx-{attempted_tx.id}|{attempted_tx.params['nonce']} "
                 f"failed for { attempted_tx.retries} attempts; tx will no longer be retried"
@@ -395,7 +395,7 @@ class _Machine(StateMachine):
         Attempts to broadcast the next `FutureTx` in the queue.
         If the broadcast is not successful, it is re-queued.
         """
-        future_tx = self._tx_tracker.pop()  # popleft
+        future_tx = self._tx_tracker.head()  # don't pop until successful
         future_tx.params = _make_tx_params(future_tx.params)
 
         # update nonce as necessary
@@ -416,7 +416,7 @@ class _Machine(StateMachine):
             # TODO #13
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            # either requeue OR fail and move on to subsequent txs
+            # notify user of failure and have them decide
             self.__handle_broadcast_failure(future_tx, e)
             return
 
@@ -428,30 +428,31 @@ class _Machine(StateMachine):
     def __handle_broadcast_failure(self, future_tx: FutureTx, e: Exception):
         is_broadcast_failure = False
         if _is_recoverable_send_tx_error(e):
-            if future_tx.requeues >= self._MAX_REDO_ATTEMPTS:
+            if future_tx.retries >= self._MAX_RETRY_ATTEMPTS:
                 is_broadcast_failure = True
                 log.error(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                    f"failed for {future_tx.requeues} attempts; tx will not be requeued"
+                    f"failed after {future_tx.retries} retry attempts"
                 )
             else:
                 log.warn(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                    f"failed - {str(e)}; requeueing tx"
+                    f"failed - {str(e)}; tx will be retried"
                 )
-                self._tx_tracker.requeue(future_tx)
+                self._tx_tracker.increment_broadcast_retries(future_tx)
         else:
             # non-recoverable
             is_broadcast_failure = True
             log.error(
                 f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                f"has non-recoverable failure - {str(e)}; tx will not be requeued"
+                f"has non-recoverable failure - {str(e)}; no automatic retries"
             )
 
         if is_broadcast_failure:
-            hook = future_tx.on_broadcast_failure
-            if hook:
-                fire_hook(hook, future_tx, e)
+            # since reporting failure; reset retry count
+            self._tx_tracker.reset_broadcast_retries(future_tx)
+
+            fire_hook(future_tx.on_broadcast_failure, future_tx, e)
 
     #
     # Monitoring
