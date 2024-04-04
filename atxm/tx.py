@@ -153,6 +153,10 @@ class FinalizedTx(AsyncTx):
     def txhash(self) -> TxHash:
         return self.receipt["transactionHash"]
 
+    @property
+    def block_number(self):
+        return self.receipt["blockNumber"]
+
 
 @dataclass
 class FaultedTx(AsyncTx):

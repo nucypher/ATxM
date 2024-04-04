@@ -461,8 +461,10 @@ class _Machine(StateMachine):
         """Follow-up on finalized transactions for a little while."""
         if not self._tx_tracker.finalized:
             return
+
+        current_block = self.w3.eth.block_number
         for tx in self._tx_tracker.finalized.copy():
-            confirmations = _get_confirmations(w3=self.w3, tx=tx)
+            confirmations = current_block - tx.block_number
             if confirmations >= self._TRACKING_CONFIRMATIONS:
                 if tx in self._tx_tracker.finalized:
                     self._tx_tracker.finalized.remove(tx)

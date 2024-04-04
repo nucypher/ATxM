@@ -1,5 +1,5 @@
 import contextlib
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from cytoolz import memoize
 from twisted.internet import reactor
@@ -17,7 +17,7 @@ from atxm.exceptions import (
     TransactionReverted,
 )
 from atxm.logging import log
-from atxm.tx import AsyncTx, FinalizedTx, PendingTx, TxHash
+from atxm.tx import AsyncTx, PendingTx, TxHash
 
 
 @memoize
@@ -89,11 +89,8 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     return receipt
 
 
-def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
-    if isinstance(tx, FinalizedTx):
-        tx_receipt = tx.receipt
-    else:
-        tx_receipt = _get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
+def _get_confirmations(w3: Web3, tx: PendingTx) -> int:
+    tx_receipt = _get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
 
     if not tx_receipt:
         log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
