@@ -521,3 +521,12 @@ class _Machine(StateMachine):
             self._wake()
 
         return tx
+
+    def remove_queued_transaction(self, tx: FutureTx):
+        """
+        Removes a queued transaction; useful when an exisitng queued transaction has broadcast
+        failures, or a queued transaction is no longer necessary.
+
+        Returns true if transaction was present and removed, false otherwise.
+        """
+        return self._tx_tracker.remove_queued_tx(tx)

@@ -257,3 +257,10 @@ class _TxTracker:
             f"[tracker] queued transaction #atx-{tx.id} priority {len(self.__queue)}"
         )
         return tx
+
+    def remove_queued_tx(self, tx: FutureTx) -> bool:
+        try:
+            self.__queue.remove(tx)
+            return True
+        except ValueError:
+            return False
