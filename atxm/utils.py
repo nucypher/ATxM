@@ -13,9 +13,6 @@ from web3.exceptions import (
 from web3.types import TxData, TxParams
 from web3.types import TxReceipt, Wei
 
-from atxm.exceptions import (
-    TransactionReverted,
-)
 from atxm.logging import log
 from atxm.tx import AsyncTx, PendingTx, TxHash
 
@@ -55,10 +52,9 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     """
     Hits eth_getTransaction and eth_getTransactionReceipt
     for the active pending txhash and checks if
-    it has been finalized or reverted.
+    it has been finalized or not.
 
     Returns the receipt if the transaction has been finalized.
-    NOTE: Performs state changes
     """
     try:
         txdata = w3.eth.get_transaction(pending_tx.txhash)
@@ -70,22 +66,20 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     if not receipt:
         return
 
-    status = receipt.get("status")
+    status = receipt["status"]
     if status == 0:
         # If status in response equals 1 the transaction was successful.
         # If it is equals 0 the transaction was reverted by EVM.
         # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
         log.warn(
-            f"[reverted] Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
+            f"[reverted] Transaction {txdata['nonce']}|{receipt['transactionHash'].hex()} "
+            f"was reverted by EVM with status {status} in block #{receipt['blockNumber']}"
         )
-        raise TransactionReverted(
-            tx=pending_tx, receipt=receipt, message=f"Reverted with EVM status {status}"
+    else:
+        log.info(
+            f"[successful] Transaction {txdata['nonce']}|{receipt['transactionHash'].hex()} "
+            f"has been included in block #{receipt['blockNumber']}"
         )
-
-    log.info(
-        f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "
-        f"has been included in block #{txdata['blockNumber']}"
-    )
     return receipt
 
 

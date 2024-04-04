@@ -187,15 +187,14 @@ class _TxTracker:
         if not self.__active:
             raise RuntimeError("No pending transaction to finalize")
 
-        hook = self.__active.on_finalized
         self.__active.receipt = receipt
         self.__active.__class__ = FinalizedTx
         tx = self.__active
+        hook = self.__active.on_finalized
         self.finalized.add(tx)  # noqa
         log.info(f"[tracker] #atx-{tx.id} pending -> finalized")
         self.clear_active()
-        if hook:
-            fire_hook(hook=hook, tx=tx)
+        fire_hook(hook=hook, tx=tx)
 
     def clear_active(self) -> None:
         """Clear the active transaction (destructive operation)."""
@@ -233,9 +232,9 @@ class _TxTracker:
         params: TxParams,
         on_broadcast_failure: Callable[[FutureTx, Exception], None],
         on_fault: Callable[[FaultedTx], None],
+        on_finalized: Optional[Callable[[FinalizedTx], None]],
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
-        on_finalized: Optional[Callable[[FinalizedTx], None]] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
         tx = FutureTx(
@@ -245,10 +244,10 @@ class _TxTracker:
         )
 
         # configure hooks
-        tx.on_broadcast = on_broadcast
         tx.on_broadcast_failure = on_broadcast_failure
-        tx.on_finalized = on_finalized
         tx.on_fault = on_fault
+        tx.on_finalized = on_finalized
+        tx.on_broadcast = on_broadcast
 
         self.__queue.append(tx)
         self.commit()

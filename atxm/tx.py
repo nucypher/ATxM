@@ -157,6 +157,10 @@ class FinalizedTx(AsyncTx):
     def block_number(self):
         return self.receipt["blockNumber"]
 
+    @property
+    def successful(self):
+        return self.receipt["status"] == 1
+
 
 @dataclass
 class FaultedTx(AsyncTx):

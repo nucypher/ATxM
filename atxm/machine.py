@@ -15,7 +15,6 @@ from atxm.exceptions import (
     Fault,
     InsufficientFunds,
     TransactionFaulted,
-    TransactionReverted,
 )
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tracker import _TxTracker
@@ -249,35 +248,28 @@ class _Machine(StateMachine):
         The 4 possible outcomes for the pending ("active") transaction in one cycle:
 
         1. paused
-        2. reverted (fault)
-        3. finalized
-        4. strategize: retry, do nothing and wait, or fault
+        2. finalized (successful or reverted)
+        3. still pending: strategize and retry, do nothing and wait, or fault
 
         Returns True if the next queued transaction can be broadcasted right now.
         """
 
         pending_tx = self._tx_tracker.pending
 
-        try:
-            receipt = _get_receipt(w3=self.w3, pending_tx=pending_tx)
+        receipt = _get_receipt(w3=self.w3, pending_tx=pending_tx)
 
-        # Outcome 2: the pending transaction was reverted (final error)
-        except TransactionReverted as e:
-            self._tx_tracker.fault(fault_error=e)
-            return
-
-        # Outcome 3: pending transaction is finalized (final success)
+        # Outcome 2: pending transaction is finalized (final success)
         if receipt:
             final_txhash = receipt["transactionHash"]
             confirmations = _get_confirmations(w3=self.w3, tx=pending_tx)
             self.log.info(
-                f"[finalized] Transaction #atx-{pending_tx.id} has been finalized "
-                f"with {confirmations} confirmation(s) txhash: {final_txhash.hex()}"
+                f"[finalized] Transaction #atx-{pending_tx.id} with txhash: {final_txhash.hex()} "
+                f"and status {receipt['status']} has been finalized with {confirmations} confirmation(s)"
             )
             self._tx_tracker.finalize_active_tx(receipt=receipt)
             return
 
-        # Outcome 4: re-strategize the pending transaction
+        # Outcome 3: re-strategize the pending transaction
         self.__strategize()
 
     #
