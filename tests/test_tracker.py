@@ -269,7 +269,9 @@ def test_update_active_after_retry(eip1559_transaction, legacy_transaction, mock
     assert tx_tracker.pending is None
     with pytest.raises(RuntimeError, match="No active transaction"):
         # there is no active tx
-        tx_tracker.update_active_after_retry(mocker.Mock(spec=PendingTx))
+        tx_tracker.update_active_after_successful_strategy_update(
+            mocker.Mock(spec=PendingTx)
+        )
 
     tx_hash = TxHash("0xdeadbeef")
 
@@ -280,7 +282,7 @@ def test_update_active_after_retry(eip1559_transaction, legacy_transaction, mock
     with pytest.raises(RuntimeError, match="Mismatch between active tx"):
         mocked_tx = mocker.Mock(spec=PendingTx)
         mocked_tx.id = 20
-        tx_tracker.update_active_after_retry(mocked_tx)
+        tx_tracker.update_active_after_successful_strategy_update(mocked_tx)
 
     # first update
     new_params = legacy_transaction
@@ -289,7 +291,7 @@ def test_update_active_after_retry(eip1559_transaction, legacy_transaction, mock
     pending_tx = tx_tracker.pending  # obtain fresh copy
     pending_tx.params = new_params
     pending_tx.txhash = new_tx_hash
-    tx_tracker.update_active_after_retry(pending_tx)
+    tx_tracker.update_active_after_successful_strategy_update(pending_tx)
     assert tx.params == new_params
     assert tx.txhash == new_tx_hash
 
@@ -300,7 +302,7 @@ def test_update_active_after_retry(eip1559_transaction, legacy_transaction, mock
     pending_tx = tx_tracker.pending  # obtain fresh copy
     pending_tx.params = new_params
     pending_tx.txhash = new_tx_hash
-    tx_tracker.update_active_after_retry(pending_tx)
+    tx_tracker.update_active_after_successful_strategy_update(pending_tx)
     assert tx.params == new_params
     assert tx.txhash == new_tx_hash
 
@@ -317,7 +319,9 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
     assert tx_tracker.pending is None
     with pytest.raises(RuntimeError, match="No active transaction"):
         # there is no active tx
-        tx_tracker.update_active_after_failed_retry_attempt(mocker.Mock(spec=PendingTx))
+        tx_tracker.update_active_after_failed_strategy_update(
+            mocker.Mock(spec=PendingTx)
+        )
 
     tx_hash = TxHash("0xdeadbeef")
     tx_tracker.morph(tx, tx_hash)
@@ -329,12 +333,12 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
     with pytest.raises(RuntimeError, match="Mismatch between active tx"):
         mocked_tx = mocker.Mock(spec=PendingTx)
         mocked_tx.id = 20
-        tx_tracker.update_active_after_failed_retry_attempt(mocked_tx)
+        tx_tracker.update_active_after_failed_strategy_update(mocked_tx)
 
     assert tx.retries == 0
 
     for i in range(1, 5):
-        tx_tracker.update_active_after_failed_retry_attempt(tx_tracker.pending)
+        tx_tracker.update_active_after_failed_strategy_update(tx_tracker.pending)
         assert tx.retries == i
         assert tx_tracker.pending.retries == i
 

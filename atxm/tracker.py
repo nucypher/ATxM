@@ -104,7 +104,9 @@ class _TxTracker:
         """Pop the next transaction from the queue."""
         return self.__queue.popleft()
 
-    def update_active_after_retry(self, tx: PendingTx) -> PendingTx:
+    def update_active_after_successful_strategy_update(
+        self, tx: PendingTx
+    ) -> PendingTx:
         if not self.__active:
             raise RuntimeError("No active transaction to update")
         if tx.id != self.__active.id:
@@ -114,10 +116,11 @@ class _TxTracker:
 
         self.__active.txhash = tx.txhash
         self.__active.params = tx.params
+        self.__active.retries = 0  # reset retries to 0
 
         return self.pending
 
-    def update_active_after_failed_retry_attempt(self, tx: PendingTx):
+    def update_active_after_failed_strategy_update(self, tx: PendingTx):
         if not self.__active:
             raise RuntimeError("No active transaction to update")
         if tx.id != self.__active.id:

@@ -736,7 +736,9 @@ def test_use_strategies_speedup_used(
         on_finalized=mocker.Mock(),
     )
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_active_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     # advance to broadcast the transaction
     while machine.pending is None:
@@ -880,7 +882,9 @@ def test_use_strategies_that_dont_make_updates(
 
     _configure_machine_strategies(machine, [strategy_1, strategy_2])
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_active_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -979,7 +983,9 @@ def test_retry_with_errors_but_recovers(
 
     _configure_machine_strategies(machine, [strategy_1])
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_active_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -1089,7 +1095,9 @@ def test_retry_with_errors_retries_exceeded(
 
     _configure_machine_strategies(machine, [strategy_1])
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_active_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     machine.start()
     assert machine.current_state == machine._IDLE

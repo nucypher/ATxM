@@ -351,15 +351,17 @@ class _Machine(StateMachine):
             #  self._tx_tracker.update_failed_retry_attempt(_active_copy)
             raise
         except (ValidationError, Web3Exception, ValueError) as e:
-            self._tx_tracker.update_active_after_failed_retry_attempt(_active_copy)
+            self._tx_tracker.update_active_after_failed_strategy_update(_active_copy)
             self.__handle_retry_failure(_active_copy, e)
             return
 
         _active_copy.txhash = txhash
-        self._tx_tracker.update_active_after_retry(_active_copy)
+        self._tx_tracker.update_active_after_successful_strategy_update(_active_copy)
 
         pending_tx = self._tx_tracker.pending
-        self.log.info(f"[retry] transaction #{pending_tx.id} has been re-broadcasted")
+        self.log.info(
+            f"[retry] transaction #{pending_tx.id} has been re-broadcasted with updated params"
+        )
         if pending_tx.on_broadcast:
             fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
 
