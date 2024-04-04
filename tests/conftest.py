@@ -86,6 +86,16 @@ def machine(w3, strategies):
 
 
 @pytest.fixture
+def broadcast_failure_hook(mocker):
+    return mocker.Mock()
+
+
+@pytest.fixture
+def fault_hook(mocker):
+    return mocker.Mock()
+
+
+@pytest.fixture
 def clock(machine):
     return machine._task.clock
 

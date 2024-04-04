@@ -10,12 +10,13 @@ from atxm.tx import FaultedTx
 from atxm.utils import _get_receipt_from_txhash
 
 
-def _broadcast_tx(machine, eip1559_transaction, account, mocker):
-    fault_hook = mocker.Mock()
-
+def _broadcast_tx(
+    machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
+):
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=broadcast_failure_hook,
         on_fault=fault_hook,
     )
 
@@ -26,7 +27,7 @@ def _broadcast_tx(machine, eip1559_transaction, account, mocker):
     assert atx.final is False
     assert atx.fault is None
 
-    return atx, fault_hook
+    return atx
 
 
 @pytest_twisted.inlineCallbacks
@@ -58,9 +59,13 @@ def test_revert(
     account,
     interval,
     mock_wake_sleep,
+    broadcast_failure_hook,
+    fault_hook,
     mocker,
 ):
-    atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
+    atx = _broadcast_tx(
+        machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
+    )
 
     assert machine.pending
 
@@ -78,14 +83,25 @@ def test_revert(
 
 @pytest.mark.usefixtures("disable_auto_mining")
 def test_strategy_fault(
-    w3, machine, clock, eip1559_transaction, account, interval, mock_wake_sleep, mocker
+    w3,
+    machine,
+    clock,
+    eip1559_transaction,
+    account,
+    interval,
+    mock_wake_sleep,
+    broadcast_failure_hook,
+    fault_hook,
+    mocker,
 ):
     faulty_strategy = mocker.Mock(spec=AsyncTxStrategy)
 
     # TODO: consider whether strategies should just be overridden through the constructor
     machine._strategies.insert(0, faulty_strategy)  # add first
 
-    atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
+    atx = _broadcast_tx(
+        machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
+    )
 
     faulty_message = "mocked fault"
     faulty_strategy.execute.side_effect = TransactionFaulted(
@@ -99,9 +115,19 @@ def test_strategy_fault(
 
 @pytest.mark.usefixtures("disable_auto_mining")
 def test_timeout_strategy_fault(
-    w3, machine, clock, eip1559_transaction, account, interval, mock_wake_sleep, mocker
+    w3,
+    machine,
+    clock,
+    eip1559_transaction,
+    account,
+    interval,
+    mock_wake_sleep,
+    broadcast_failure_hook,
+    fault_hook,
 ):
-    atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
+    atx = _broadcast_tx(
+        machine, eip1559_transaction, account, broadcast_failure_hook, fault_hook
+    )
 
     atx.created -= 9999999999
 
