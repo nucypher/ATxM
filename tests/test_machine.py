@@ -1,3 +1,5 @@
+import time
+
 import math
 from typing import List
 
@@ -719,6 +721,7 @@ def test_use_strategies_speedup_used(
     account,
     mocker,
     mock_wake_sleep,
+    strategies,
 ):
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -750,8 +753,8 @@ def test_use_strategies_speedup_used(
     broadcast_hook.assert_called_with(atx), "called with correct parameter"
 
     assert machine.current_state == machine._BUSY
-
     original_params = dict(atx.params)
+    atx.last_updated = int(time.time() - strategies[0].min_time_between_speedups - 1)
 
     # need some cycles while tx unmined for strategies to kick in
     for i in range(2):
