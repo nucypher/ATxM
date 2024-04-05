@@ -19,11 +19,13 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     broadcast_failure_hook_1 = mocker.Mock()
     fault_hook_1 = mocker.Mock()
     finalized_hook_1 = mocker.Mock()
+    insufficient_funds_hook_1 = mocker.Mock()
     tx = tx_tracker.queue_tx(
         params=eip1559_transaction,
         on_broadcast_failure=broadcast_failure_hook_1,
         on_fault=fault_hook_1,
         on_finalized=finalized_hook_1,
+        on_insufficient_funds=insufficient_funds_hook_1,
     )
     assert len(tx_tracker.queue) == 1
     assert isinstance(tx, FutureTx)
@@ -42,12 +44,14 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     broadcast_failure_hook_2 = mocker.Mock()
     fault_hook_2 = mocker.Mock()
     finalized_hook_2 = mocker.Mock()
+    insufficient_funds_hook_2 = mocker.Mock()
     tx_2 = tx_tracker.queue_tx(
         params=legacy_transaction,
         info=tx_2_info,
         on_broadcast_failure=broadcast_failure_hook_2,
         on_fault=fault_hook_2,
         on_finalized=finalized_hook_2,
+        on_insufficient_funds=insufficient_funds_hook_2,
     )
     assert len(tx_tracker.queue) == 2
     assert isinstance(tx_2, FutureTx)
@@ -67,10 +71,12 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
     assert tx.on_broadcast_failure == broadcast_failure_hook_1
     assert tx.on_fault == fault_hook_1
     assert tx.on_finalized == finalized_hook_1
+    assert tx.on_insufficient_funds == insufficient_funds_hook_1
 
     broadcast_failure_hook_3 = mocker.Mock()
     fault_hook_3 = mocker.Mock()
     finalized_hook_3 = mocker.Mock()
+    insufficient_funds_hook_3 = mocker.Mock()
     broadcast_hook = mocker.Mock()
     tx_3 = tx_tracker.queue_tx(
         params=eip1559_transaction,
@@ -78,6 +84,7 @@ def test_queue(eip1559_transaction, legacy_transaction, mocker):
         on_broadcast_failure=broadcast_failure_hook_3,
         on_fault=fault_hook_3,
         on_finalized=finalized_hook_3,
+        on_insufficient_funds=insufficient_funds_hook_3,
     )
     assert tx_3.params == eip1559_transaction
     assert tx_3.info is None
@@ -103,18 +110,21 @@ def test_morph(eip1559_transaction, legacy_transaction, mocker):
     broadcast_failure_hook = mocker.Mock()
     fault_hook = mocker.Mock()
     finalized_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
     tx_1 = tx_tracker.queue_tx(
         params=eip1559_transaction,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
         on_fault=fault_hook,
         on_finalized=finalized_hook,
+        on_insufficient_funds=insufficient_funds_hook,
     )
     tx_2 = tx_tracker.queue_tx(
         params=legacy_transaction,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
         on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
     assert tx_1.id != tx_2.id
 
@@ -134,6 +144,7 @@ def test_morph(eip1559_transaction, legacy_transaction, mocker):
     assert tx_1.on_broadcast_failure == broadcast_failure_hook
     assert tx_1.on_fault == fault_hook
     assert tx_1.on_finalized == finalized_hook
+    assert tx_1.on_insufficient_funds == insufficient_funds_hook
     assert tx_1 not in tx_tracker.queue
     assert len(tx_tracker.queue) == 1
 
@@ -163,18 +174,21 @@ def test_fault(eip1559_transaction, legacy_transaction, mocker):
     broadcast_failure_hook = mocker.Mock()
     fault_hook = mocker.Mock()
     finalized_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
     tx = tx_tracker.queue_tx(
         params=eip1559_transaction,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
         on_fault=fault_hook,
         on_finalized=finalized_hook,
+        on_insufficient_funds=insufficient_funds_hook,
     )
     tx_2 = tx_tracker.queue_tx(
         params=legacy_transaction,
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
         on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert len(tx_tracker.queue) == 2
@@ -264,6 +278,7 @@ def test_update_active_after_retry(eip1559_transaction, legacy_transaction, mock
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
         on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert tx_tracker.pending is None
@@ -314,6 +329,7 @@ def test_update_failed_retry_attempt(eip1559_transaction, legacy_transaction, mo
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
         on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert tx_tracker.pending is None
@@ -362,6 +378,7 @@ def test_finalize_active_tx(receipt_status, eip1559_transaction, tx_receipt, moc
         on_broadcast_failure=broadcast_failure_hook,
         on_fault=fault_hook,
         on_finalized=finalized_hook,
+        on_insufficient_funds=mocker.Mock(),
     )
 
     tx_hash = TxHash("0xdeadbeef")
@@ -416,12 +433,14 @@ def test_commit_restore(
         on_broadcast_failure=hook,
         on_fault=hook,
         on_finalized=hook,
+        on_insufficient_funds=hook,
     )
     tx_2 = tx_tracker.queue_tx(
         params=legacy_transaction,
         on_broadcast_failure=hook,
         on_fault=hook,
         on_finalized=hook,
+        on_insufficient_funds=hook,
     )
     tx_3 = tx_tracker.queue_tx(
         params=eip1559_transaction,
@@ -429,12 +448,14 @@ def test_commit_restore(
         on_broadcast_failure=hook,
         on_fault=hook,
         on_finalized=hook,
+        on_insufficient_funds=hook,
     )
     tx_4 = tx_tracker.queue_tx(
         params=legacy_transaction,
         on_broadcast_failure=hook,
         on_fault=hook,
         on_finalized=hook,
+        on_insufficient_funds=mocker.Mock(),
     )
     tx_5 = tx_tracker.queue_tx(
         params=eip1559_transaction,
@@ -442,12 +463,14 @@ def test_commit_restore(
         on_broadcast_failure=hook,
         on_fault=hook,
         on_finalized=hook,
+        on_insufficient_funds=hook,
     )
     tx_6 = tx_tracker.queue_tx(
         params=legacy_transaction,
         on_broadcast_failure=hook,
         on_fault=hook,
         on_finalized=hook,
+        on_insufficient_funds=hook,
     )
 
     # max tx_1 finalized

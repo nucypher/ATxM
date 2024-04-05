@@ -17,6 +17,7 @@ def _broadcast_tx(machine, eip1559_transaction, account, mocker):
         on_broadcast_failure=mocker.Mock(),
         on_fault=fault_hook,
         on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # broadcast tx

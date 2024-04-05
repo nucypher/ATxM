@@ -22,6 +22,7 @@ def test_machine(
         on_broadcast_failure=mocker.Mock(),
         on_fault=mocker.Mock(),
         on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert len(async_txs) == 2
