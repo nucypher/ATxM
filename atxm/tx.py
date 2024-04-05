@@ -93,6 +93,7 @@ class FutureTx(AsyncTx):
 class PendingTx(AsyncTx):
     retries: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
+    last_updated: int = field(default=0, init=False)
     params: TxParams
     txhash: TxHash
     created: int

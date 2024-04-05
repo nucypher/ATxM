@@ -116,6 +116,7 @@ class _TxTracker:
 
         self.__active.txhash = tx.txhash
         self.__active.params = tx.params
+        self.__active.last_updated = int(time.time())
         self.__active.retries = 0  # reset retries to 0
 
         return self.pending
@@ -143,7 +144,9 @@ class _TxTracker:
                 f"Mismatch between tx at the front of the queue ({head_tx.id}) and provided tx ({tx.id})"
             )
         tx.txhash = txhash
-        tx.created = int(time.time())
+        now = int(time.time())
+        tx.created = now
+        tx.last_updated = now
         tx.retries = 0  # reset retries
         tx.capped = False
         tx.__class__ = PendingTx
