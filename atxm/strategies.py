@@ -136,7 +136,7 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
 
     _MAX_TIP_FACTOR = 3  # max 3x over suggested tip
 
-    _MIN_TIME_BETWEEN_SPEEDUPS = 60  # 60s minimum between speedups
+    _MIN_TIME_BETWEEN_SPEEDUPS = 90  # 90s minimum between speedups
 
     _NAME = "speedup"
 
