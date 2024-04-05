@@ -2,6 +2,7 @@ import contextlib
 from typing import Callable, Optional
 
 from cytoolz import memoize
+from eth_utils import ValidationError
 from twisted.internet import reactor
 from web3 import Web3
 from web3.exceptions import (
@@ -10,9 +11,10 @@ from web3.exceptions import (
     TooManyRequests,
     TransactionNotFound,
 )
-from web3.types import TxData, TxParams
+from web3.types import RPCError, TxData, TxParams
 from web3.types import TxReceipt, Wei
 
+from atxm.exceptions import InsufficientFunds, RPCException
 from atxm.logging import log
 from atxm.tx import AsyncTx, PendingTx, TxHash
 
@@ -151,3 +153,24 @@ def _make_tx_params(data: TxData) -> TxParams:
 
 def _is_recoverable_send_tx_error(e: Exception) -> bool:
     return isinstance(e, (TooManyRequests, ProviderConnectionError, TimeExhausted))
+
+
+def _process_send_raw_transaction_exception(e: Exception):
+    try:
+        error = RPCError(**e.args[0])
+    except TypeError:
+        # not an RPCError
+        if isinstance(
+            e, ValidationError
+        ) and "Sender does not have enough balance" in str(e):
+            raise InsufficientFunds(str(e)) from e
+
+        raise e
+    else:
+        error_code = error["code"]
+        error_message = error["message"]
+        if error_code == -32000:  # IPC Error
+            if "insufficient funds" in error_message:
+                raise InsufficientFunds(error_message)
+
+        raise RPCException(error_code, error_message) from e

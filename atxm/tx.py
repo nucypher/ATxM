@@ -1,7 +1,7 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Union
 
 from eth_typing import ChecksumAddress
 from eth_utils import encode_hex
@@ -18,16 +18,19 @@ class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
     fault: Optional[Fault] = field(default=None, init=False)
-    on_broadcast: Optional[Callable[["PendingTx"], None]] = field(
-        default=None, init=False
-    )
     on_broadcast_failure: Optional[Callable[["FutureTx", Exception], None]] = field(
         default=None, init=False
     )
-    on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
+    on_broadcast: Optional[Callable[["PendingTx"], None]] = field(
         default=None, init=False
     )
     on_fault: Optional[Callable[["FaultedTx"], None]] = field(default=None, init=False)
+    on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
+        default=None, init=False
+    )
+    on_insufficient_funds: Optional[
+        Callable[[Union["FutureTx", "PendingTx"]], None]
+    ] = field(default=None, init=False)
 
     def __repr__(self):
         return f"<{self.__class__.__name__} id={self.id} final={self.final}>"

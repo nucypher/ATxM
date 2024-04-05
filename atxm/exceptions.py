@@ -16,12 +16,16 @@ class Fault(Enum):
     # Something went wrong
     ERROR = "error"
 
-    # ...
-    INSUFFICIENT_FUNDS = "insufficient_funds"
-
 
 class InsufficientFunds(Exception):
     """raised when a transaction exceeds the spending cap"""
+
+
+class RPCException(Exception):
+    def __init__(self, error_code: int, error_message: str):
+        self.error_code = error_code
+        self.error_message = error_message
+        super().__init__(f"RPC Error [{error_code}]: {error_message}")
 
 
 class TransactionFaulted(Exception):

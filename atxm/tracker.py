@@ -4,11 +4,11 @@ from collections import deque
 from copy import copy
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, Deque, Dict, Optional, Set, Tuple
+from typing import Callable, Deque, Dict, Optional, Set, Tuple, Union
 
 from web3.types import TxParams, TxReceipt
 
-from atxm.exceptions import TransactionFaulted
+from atxm.exceptions import InsufficientFunds, TransactionFaulted
 from atxm.logging import log
 from atxm.tx import (
     FinalizedTx,
@@ -239,6 +239,9 @@ class _TxTracker:
         on_broadcast_failure: Callable[[FutureTx, Exception], None],
         on_fault: Callable[[FaultedTx], None],
         on_finalized: Callable[[FinalizedTx], None],
+        on_insufficient_funds: Callable[
+            [Union[FutureTx, PendingTx], InsufficientFunds], None
+        ],
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
     ) -> FutureTx:
@@ -254,6 +257,7 @@ class _TxTracker:
         tx.on_fault = on_fault
         tx.on_finalized = on_finalized
         tx.on_broadcast = on_broadcast
+        tx.on_insufficient_funds = on_insufficient_funds
 
         self.__queue.append(tx)
         self.commit()

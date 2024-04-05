@@ -1,14 +1,12 @@
 from copy import copy, deepcopy
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from eth_account.signers.local import LocalAccount
-from eth_utils import ValidationError
 from statemachine import State, StateMachine
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
 from web3 import Web3
-from web3.exceptions import Web3Exception
 from web3.types import TxParams
 
 from atxm.exceptions import (
@@ -19,7 +17,6 @@ from atxm.exceptions import (
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tracker import _TxTracker
 from atxm.tx import (
-    AsyncTx,
     FutureTx,
     PendingTx,
     TxHash,
@@ -28,6 +25,7 @@ from atxm.utils import (
     _get_average_blocktime,
     _get_confirmations,
     _get_receipt,
+    _process_send_raw_transaction_exception,
     _is_recoverable_send_tx_error,
     _make_tx_params,
     fire_hook,
@@ -283,29 +281,18 @@ class _Machine(StateMachine):
             raise ValueError(f"Signer {address} not found")
         return signer
 
-    def __fire(self, tx: AsyncTx, msg: str) -> TxHash:
+    def __fire(self, tx: Union[FutureTx, PendingTx], msg: str) -> TxHash:
         """
         Signs and broadcasts a transaction, handling RPC errors
         and internal state changes.
-
-        On success, returns the `PendingTx` object.
-        On failure, returns None.
-
-        Morphs a `FutureTx` into a `PendingTx` and advances it
-        into the active transaction slot if broadcast is successful.
         """
         signer: LocalAccount = self.__get_signer(tx.params["from"])
         try:
             txhash = self.w3.eth.send_raw_transaction(
                 signer.sign_transaction(tx.params).rawTransaction
             )
-        except ValidationError as e:
-            # special case for insufficient funds
-            if "Sender does not have enough" in str(e):
-                # TODO raised exception should be handled in some way #13.
-                raise InsufficientFunds
-
-            raise e
+        except Exception as e:
+            raise _process_send_raw_transaction_exception(e)
 
         self.log.info(
             f"[{msg}] fired transaction #atx-{tx.id}|{tx.params['nonce']}|{txhash.hex()}"
@@ -333,7 +320,7 @@ class _Machine(StateMachine):
 
         if not params_updated:
             # mandatory default timeout strategy prevents this from being a forever wait
-            log.info(
+            self.log.info(
                 f"[wait] strategies made no suggested updates to "
                 f"pending tx #{_active_copy.id} - skipping retry round"
             )
@@ -344,13 +331,17 @@ class _Machine(StateMachine):
 
         try:
             txhash = self.__fire(tx=_active_copy, msg=_names)
-        except InsufficientFunds:
-            # special case re-raise insufficient funds (for now)
-            # TODO #13
-            # TODO should the following also be done?
-            #  self._tx_tracker.update_failed_retry_attempt(_active_copy)
-            raise
-        except (ValidationError, Web3Exception, ValueError) as e:
+        except InsufficientFunds as e:
+            # special case
+            self.log.error(
+                f"[insufficient funds] transaction #atx-{_active_copy.id}|{_active_copy.params['nonce']} "
+                f"failed because of insufficient funds - {e}"
+            )
+            # get hook from actual pending object (not a deep copy)
+            hook = self._tx_tracker.pending.on_insufficient_funds
+            fire_hook(hook, _active_copy, e)
+            return
+        except Exception as e:
             self._tx_tracker.update_active_after_failed_strategy_update(_active_copy)
             self.__handle_retry_failure(_active_copy, e)
             return
@@ -366,13 +357,13 @@ class _Machine(StateMachine):
             fire_hook(hook=pending_tx.on_broadcast, tx=pending_tx)
 
     def __handle_retry_failure(self, attempted_tx: PendingTx, e: Exception):
-        log.warn(
+        self.log.warn(
             f"[retry] transaction #atx-{attempted_tx.id}|{attempted_tx.params['nonce']} "
             f"failed with updated params - {str(e)}; retry again next round"
         )
 
         if attempted_tx.retries >= self._MAX_RETRY_ATTEMPTS:
-            log.error(
+            self.log.error(
                 f"[retry] transaction #atx-{attempted_tx.id}|{attempted_tx.params['nonce']} "
                 f"failed for { attempted_tx.retries} attempts; tx will no longer be retried"
             )
@@ -405,11 +396,15 @@ class _Machine(StateMachine):
 
         try:
             txhash = self.__fire(tx=future_tx, msg="broadcast")
-        except InsufficientFunds:
-            # special case re-raise insufficient funds (for now)
-            # TODO #13
-            raise
-        except (ValidationError, Web3Exception, ValueError) as e:
+        except InsufficientFunds as e:
+            # special case
+            self.log.error(
+                f"[insufficient funds] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
+                f"failed because of insufficient funds - {e}"
+            )
+            fire_hook(future_tx.on_insufficient_funds, future_tx, e)
+            return
+        except Exception as e:
             # notify user of failure and have them decide
             self.__handle_broadcast_failure(future_tx, e)
             return
@@ -424,22 +419,22 @@ class _Machine(StateMachine):
         if _is_recoverable_send_tx_error(e):
             if future_tx.retries >= self._MAX_RETRY_ATTEMPTS:
                 is_broadcast_failure = True
-                log.error(
+                self.log.error(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
                     f"failed after {future_tx.retries} retry attempts"
                 )
             else:
-                log.warn(
+                self.log.warn(
                     f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                    f"failed - {str(e)}; tx will be retried"
+                    f"failed - {e}; tx will be retried"
                 )
                 self._tx_tracker.increment_broadcast_retries(future_tx)
         else:
             # non-recoverable
             is_broadcast_failure = True
-            log.error(
+            self.log.error(
                 f"[broadcast] transaction #atx-{future_tx.id}|{future_tx.params['nonce']} "
-                f"has non-recoverable failure - {str(e)}; no automatic retries"
+                f"has non-recoverable failure - {e}"
             )
 
         if is_broadcast_failure:
