@@ -238,7 +238,7 @@ class _TxTracker:
         params: TxParams,
         on_broadcast_failure: Callable[[FutureTx, Exception], None],
         on_fault: Callable[[FaultedTx], None],
-        on_finalized: Optional[Callable[[FinalizedTx], None]],
+        on_finalized: Callable[[FinalizedTx], None],
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
     ) -> FutureTx:
