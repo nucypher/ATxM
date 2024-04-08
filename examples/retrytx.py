@@ -68,7 +68,7 @@ transaction_eip1559 = {
 }
 
 #
-# Define Hooks (optional)
+# Define Hooks
 #
 
 
