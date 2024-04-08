@@ -8,7 +8,7 @@ from eth_utils import encode_hex
 from hexbytes import HexBytes
 from web3.types import TxParams, TxReceipt
 
-from atxm.exceptions import Fault
+from atxm.exceptions import Fault, InsufficientFunds
 
 TxHash = HexBytes
 
@@ -29,7 +29,7 @@ class AsyncTx(ABC):
         default=None, init=False
     )
     on_insufficient_funds: Optional[
-        Callable[[Union["FutureTx", "PendingTx"]], None]
+        Callable[[Union["FutureTx", "PendingTx"], InsufficientFunds], None]
     ] = field(default=None, init=False)
 
     def __repr__(self):
