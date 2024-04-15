@@ -363,7 +363,6 @@ def test_broadcast(
 
 @pytest_twisted.inlineCallbacks
 def test_broadcast_insufficient_funds(
-    clock,
     w3,
     machine,
     legacy_transaction,
@@ -428,7 +427,6 @@ def test_broadcast_insufficient_funds(
 
 @pytest_twisted.inlineCallbacks
 def test_broadcast_insufficient_funds_eth_tester(
-    clock,
     w3,
     machine,
     eip1559_transaction,
@@ -1101,9 +1099,8 @@ def test_use_strategies_that_dont_make_updates(
 
 
 @pytest_twisted.inlineCallbacks
-@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
 def test_insufficient_funds_after_strategy_update_eth_tester(
-    ethereum_tester,
     w3,
     machine,
     state_observer,
@@ -1111,7 +1108,6 @@ def test_insufficient_funds_after_strategy_update_eth_tester(
     eip1559_transaction,
     account,
     mocker,
-    mock_wake_sleep,
 ):
     strategy_updated_params = dict(eip1559_transaction)
     account_balance = w3.eth.get_balance(account.address)
@@ -1173,9 +1169,8 @@ def test_insufficient_funds_after_strategy_update_eth_tester(
 
 
 @pytest_twisted.inlineCallbacks
-@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
 def test_insufficient_funds_after_strategy_update(
-    ethereum_tester,
     w3,
     machine,
     state_observer,
@@ -1183,7 +1178,6 @@ def test_insufficient_funds_after_strategy_update(
     eip1559_transaction,
     account,
     mocker,
-    mock_wake_sleep,
 ):
     strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
     strategy_1.name = "no_change_but_still_returns_non_none"

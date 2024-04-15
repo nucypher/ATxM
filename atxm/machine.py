@@ -222,7 +222,7 @@ class _Machine(StateMachine):
 
     def _wake(self) -> None:
         """Runs the looping call immediately."""
-        log.info("[wake] running looping call now.")
+        self.log.info("[wake] running looping call now.")
         if self._task.running:
             # TODO instead of stopping/starting, can you set interval to 0
             #  and call reset to have looping call immediately?
@@ -232,7 +232,7 @@ class _Machine(StateMachine):
 
     def _sleep(self) -> None:
         if self._task.running:
-            log.info("[sleep] sleeping")
+            self.log.info("[sleep] sleeping")
             self._stop()
 
     #
@@ -243,7 +243,7 @@ class _Machine(StateMachine):
         """
         Handles the currently tracked pending transaction.
 
-        The 4 possible outcomes for the pending ("active") transaction in one cycle:
+        The 3 possible outcomes for the pending ("active") transaction in one cycle:
 
         1. paused
         2. finalized (successful or reverted)
@@ -515,7 +515,7 @@ class _Machine(StateMachine):
 
     def remove_queued_transaction(self, tx: FutureTx):
         """
-        Removes a queued transaction; useful when an exisitng queued transaction has broadcast
+        Removes a queued transaction; useful when an existing queued transaction has broadcast
         failures, or a queued transaction is no longer necessary.
 
         Returns true if transaction was present and removed, false otherwise.

@@ -51,15 +51,11 @@ def _verify_tx_faulted(machine, atx, fault_hook, expected_fault: Fault):
     assert atx.final is False
 
 
-@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
 def test_strategy_fault(
-    w3,
     machine,
-    clock,
     eip1559_transaction,
     account,
-    interval,
-    mock_wake_sleep,
     mocker,
 ):
     faulty_strategy = mocker.Mock(spec=AsyncTxStrategy)
@@ -79,15 +75,11 @@ def test_strategy_fault(
     assert atx.error == faulty_message
 
 
-@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
 def test_timeout_strategy_fault(
-    w3,
     machine,
-    clock,
     eip1559_transaction,
     account,
-    interval,
-    mock_wake_sleep,
     mocker,
 ):
     atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
