@@ -1,3 +1,5 @@
+import time
+
 import math
 import random
 from datetime import datetime, timedelta
@@ -113,25 +115,56 @@ def test_speedup_strategy_constructor(w3):
     # other values
     speedup_increase = 0.223
     max_tip_factor = 4
+    min_time_between_speedups = 45
     speedup_strategy = ExponentialSpeedupStrategy(
         w3=w3,
         speedup_increase_percentage=speedup_increase,
         max_tip_factor=max_tip_factor,
+        min_time_between_speedups=min_time_between_speedups,
     )
     assert speedup_strategy.speedup_factor == (1 + speedup_increase)
     assert speedup_strategy.max_tip_factor == max_tip_factor
+    assert speedup_strategy.min_time_between_speedups == min_time_between_speedups
 
     assert speedup_strategy.name == "speedup"
 
 
-def test_speedup_strategy_legacy_tx(w3, legacy_transaction, mocker):
+def test_speedup_strategy_not_enough_time_passed(
+    w3, legacy_transaction, eip1559_transaction, mocker
+):
     speedup_percentage = 0.112  # 11.2%
+    min_time_between_speedup = 45
     speedup_strategy = ExponentialSpeedupStrategy(
-        w3, speedup_increase_percentage=speedup_percentage
+        w3=w3,
+        speedup_increase_percentage=speedup_percentage,
+        min_time_between_speedups=min_time_between_speedup,
     )
 
     pending_tx = mocker.Mock(spec=PendingTx)
     pending_tx.id = 1
+    pending_tx.last_updated = int(time.time())  # now
+
+    # no speedup since not enough time passed
+    for transaction_params in [legacy_transaction, eip1559_transaction]:
+        pending_tx.params = dict(transaction_params)
+        tx_params = speedup_strategy.execute(pending_tx)
+        assert tx_params is None  # no change since not enough time has passed
+
+
+def test_speedup_strategy_legacy_tx(w3, legacy_transaction, mocker):
+    speedup_percentage = 0.112  # 11.2%
+    min_time_between_speedup = 45
+    speedup_strategy = ExponentialSpeedupStrategy(
+        w3=w3,
+        speedup_increase_percentage=speedup_percentage,
+        min_time_between_speedups=min_time_between_speedup,
+    )
+
+    pending_tx = mocker.Mock(spec=PendingTx)
+    pending_tx.id = 1
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
 
     # generated gas price < existing tx gas price
     generated_gas_price = legacy_transaction["gasPrice"] - 1  # < what is in tx
@@ -139,6 +172,8 @@ def test_speedup_strategy_legacy_tx(w3, legacy_transaction, mocker):
 
     assert legacy_transaction["gasPrice"]
     tx_params = dict(legacy_transaction)
+
+    pending_tx.last_updated = int(time.time() - min_time_between_speedup - 1)
     for i in range(3):
         pending_tx.params = tx_params
         old_gas_price = tx_params["gasPrice"]
@@ -199,6 +234,9 @@ def test_speedup_strategy_eip1559_tx_no_blockchain_change(
     old_max_fee_per_gas = eip1559_transaction["maxFeePerGas"]
 
     pending_tx.params = dict(eip1559_transaction)
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
     tx_params = speedup_strategy.execute(pending_tx)
 
     updated_max_priority_fee_per_gas = tx_params["maxPriorityFeePerGas"]
@@ -239,6 +277,9 @@ def test_speedup_strategy_eip1559_tx_base_fee_decreased(
     )
 
     pending_tx.params = dict(eip1559_transaction)
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
     tx_params = speedup_strategy.execute(pending_tx)
 
     updated_max_priority_fee_per_gas = tx_params["maxPriorityFeePerGas"]
@@ -279,6 +320,9 @@ def test_speedup_strategy_eip1559_tx_base_fee_increased(
     )
 
     pending_tx.params = dict(eip1559_transaction)
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
     tx_params = speedup_strategy.execute(pending_tx)
 
     updated_max_priority_fee_per_gas = tx_params["maxPriorityFeePerGas"]
@@ -318,6 +362,9 @@ def test_speedup_strategy_eip1559_tx_no_max_fee(w3, eip1559_transaction, mocker)
     del tx_params["maxFeePerGas"]
 
     pending_tx.params = tx_params
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
     tx_params = speedup_strategy.execute(pending_tx)
 
     updated_max_priority_fee_per_gas = tx_params["maxPriorityFeePerGas"]
@@ -351,6 +398,9 @@ def test_speedup_strategy_eip1559_tx_no_max_priority_fee(
     del tx_params["maxPriorityFeePerGas"]
 
     pending_tx.params = tx_params
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
     tx_params = speedup_strategy.execute(pending_tx)
 
     updated_max_priority_fee_per_gas = tx_params["maxPriorityFeePerGas"]
@@ -375,6 +425,9 @@ def test_speedup_strategy_eip1559_tx_hit_max_tip(w3, eip1559_transaction, mocker
     ) = eip1559_setup(mocker, w3)
 
     pending_tx.params = dict(eip1559_transaction)
+    pending_tx.last_updated = int(
+        time.time() - speedup_strategy.min_time_between_speedups - 1
+    )  # enough time passed
     expected_num_iterations_before_hitting_max_tip = math.ceil(
         math.log(max_tip_factor) / math.log(1 + speedup_percentage)
     )
@@ -401,10 +454,12 @@ def test_speedup_strategy_eip1559_tx_hit_max_tip(w3, eip1559_transaction, mocker
 def eip1559_setup(mocker, w3):
     speedup_percentage = round(random.randint(110, 230) / 1000, 3)  # [11%, 23%]
     max_tip_factor = random.randint(2, 5)
+    min_time_between_speedups = random.randint(45, 90)
     speedup_strategy = ExponentialSpeedupStrategy(
         w3,
         speedup_increase_percentage=speedup_percentage,
         max_tip_factor=max_tip_factor,
+        min_time_between_speedups=min_time_between_speedups,
     )
     pending_tx = mocker.Mock(spec=PendingTx)
     pending_tx.id = 1

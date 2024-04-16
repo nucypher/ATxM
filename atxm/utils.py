@@ -1,7 +1,8 @@
 import contextlib
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from cytoolz import memoize
+from eth_utils import ValidationError
 from twisted.internet import reactor
 from web3 import Web3
 from web3.exceptions import (
@@ -10,14 +11,12 @@ from web3.exceptions import (
     TooManyRequests,
     TransactionNotFound,
 )
-from web3.types import TxData, TxParams
+from web3.types import RPCError, TxData, TxParams
 from web3.types import TxReceipt, Wei
 
-from atxm.exceptions import (
-    TransactionReverted,
-)
+from atxm.exceptions import InsufficientFunds, RPCException
 from atxm.logging import log
-from atxm.tx import AsyncTx, FinalizedTx, PendingTx, TxHash
+from atxm.tx import AsyncTx, PendingTx, TxHash
 
 
 @memoize
@@ -55,10 +54,9 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     """
     Hits eth_getTransaction and eth_getTransactionReceipt
     for the active pending txhash and checks if
-    it has been finalized or reverted.
+    it has been finalized or not.
 
     Returns the receipt if the transaction has been finalized.
-    NOTE: Performs state changes
     """
     try:
         txdata = w3.eth.get_transaction(pending_tx.txhash)
@@ -70,33 +68,32 @@ def _get_receipt(w3: Web3, pending_tx: PendingTx) -> Optional[TxReceipt]:
     if not receipt:
         return
 
-    status = receipt.get("status")
+    status = receipt["status"]
     if status == 0:
         # If status in response equals 1 the transaction was successful.
         # If it is equals 0 the transaction was reverted by EVM.
         # https://web3py.readthedocs.io/en/stable/web3.eth.html#web3.eth.Eth.get_transaction_receipt
         log.warn(
-            f"[reverted] Transaction {txdata['hash'].hex()} was reverted by EVM with status {status}"
+            f"[reverted] Transaction {txdata['nonce']}|{receipt['transactionHash'].hex()} "
+            f"was reverted by EVM with status {status} in block #{receipt['blockNumber']}"
         )
-        raise TransactionReverted(
-            tx=pending_tx, receipt=receipt, message=f"Reverted with EVM status {status}"
+    else:
+        log.info(
+            f"[successful] Transaction {txdata['nonce']}|{receipt['transactionHash'].hex()} "
+            f"has been included in block #{receipt['blockNumber']}"
         )
-
-    log.info(
-        f"[accepted] Transaction {txdata['nonce']}|{txdata['hash'].hex()} "
-        f"has been included in block #{txdata['blockNumber']}"
-    )
     return receipt
 
 
-def _get_confirmations(w3: Web3, tx: Union[PendingTx, FinalizedTx]) -> int:
-    current_block = w3.eth.block_number
+def _get_confirmations(w3: Web3, tx: PendingTx) -> int:
     tx_receipt = _get_receipt_from_txhash(w3=w3, txhash=tx.txhash)
+
     if not tx_receipt:
         log.info(f"Transaction {tx.txhash.hex()} is pending or unconfirmed")
         return 0
 
     tx_block = tx_receipt["blockNumber"]
+    current_block = w3.eth.block_number
     confirmations = current_block - tx_block
     return confirmations
 
@@ -156,3 +153,24 @@ def _make_tx_params(data: TxData) -> TxParams:
 
 def _is_recoverable_send_tx_error(e: Exception) -> bool:
     return isinstance(e, (TooManyRequests, ProviderConnectionError, TimeExhausted))
+
+
+def _process_send_raw_transaction_exception(e: Exception):
+    try:
+        error = RPCError(**e.args[0])
+    except TypeError:
+        # not an RPCError
+        if isinstance(
+            e, ValidationError
+        ) and "Sender does not have enough balance" in str(e):
+            raise InsufficientFunds(str(e)) from e
+
+        raise e
+    else:
+        error_code = error["code"]
+        error_message = error["message"]
+        if error_code == -32000:  # IPC Error
+            if "insufficient funds" in error_message:
+                raise InsufficientFunds(error_message)
+
+        raise RPCException(error_code, error_message) from e

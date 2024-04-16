@@ -1,6 +1,6 @@
 from enum import Enum
 
-from web3.types import PendingTx, TxReceipt
+from web3.types import PendingTx
 
 
 class Fault(Enum):
@@ -13,18 +13,19 @@ class Fault(Enum):
     # Strategy has been running for too long
     TIMEOUT = "timeout"
 
-    # Transaction reverted
-    REVERT = "revert"
-
     # Something went wrong
     ERROR = "error"
-
-    # ...
-    INSUFFICIENT_FUNDS = "insufficient_funds"
 
 
 class InsufficientFunds(Exception):
     """raised when a transaction exceeds the spending cap"""
+
+
+class RPCException(Exception):
+    def __init__(self, error_code: int, error_message: str):
+        self.error_code = error_code
+        self.error_message = error_message
+        super().__init__(f"RPC Error [{error_code}]: {error_message}")
 
 
 class TransactionFaulted(Exception):
@@ -35,11 +36,3 @@ class TransactionFaulted(Exception):
         self.fault = fault
         self.message = message
         super().__init__(message)
-
-
-class TransactionReverted(TransactionFaulted):
-    """Raised when a transaction has been reverted."""
-
-    def __init__(self, tx: PendingTx, receipt: TxReceipt, message: str):
-        self.receipt = receipt
-        super().__init__(tx=tx, fault=Fault.REVERT, message=message)

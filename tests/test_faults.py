@@ -2,12 +2,10 @@ import pytest
 import pytest_twisted
 from twisted.internet import reactor
 from twisted.internet.task import deferLater
-from web3.types import TxReceipt
 
 from atxm.exceptions import Fault, TransactionFaulted
 from atxm.strategies import AsyncTxStrategy
 from atxm.tx import FaultedTx
-from atxm.utils import _get_receipt_from_txhash
 
 
 def _broadcast_tx(machine, eip1559_transaction, account, mocker):
@@ -16,7 +14,10 @@ def _broadcast_tx(machine, eip1559_transaction, account, mocker):
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
         on_fault=fault_hook,
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # broadcast tx
@@ -50,35 +51,12 @@ def _verify_tx_faulted(machine, atx, fault_hook, expected_fault: Fault):
     assert atx.final is False
 
 
-def test_revert(
-    w3,
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
+def test_strategy_fault(
     machine,
-    clock,
     eip1559_transaction,
     account,
-    interval,
-    mock_wake_sleep,
     mocker,
-):
-    atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
-
-    assert machine.pending
-
-    # tx auto-mined; force receipt to symbolize a revert of the tx
-    receipt = _get_receipt_from_txhash(w3, atx.txhash)
-    revert_receipt = dict(receipt)
-    revert_receipt["status"] = 0
-
-    mocker.patch.object(
-        w3.eth, "get_transaction_receipt", return_value=TxReceipt(revert_receipt)
-    )
-
-    _verify_tx_faulted(machine, atx, fault_hook, expected_fault=Fault.REVERT)
-
-
-@pytest.mark.usefixtures("disable_auto_mining")
-def test_strategy_fault(
-    w3, machine, clock, eip1559_transaction, account, interval, mock_wake_sleep, mocker
 ):
     faulty_strategy = mocker.Mock(spec=AsyncTxStrategy)
 
@@ -97,9 +75,12 @@ def test_strategy_fault(
     assert atx.error == faulty_message
 
 
-@pytest.mark.usefixtures("disable_auto_mining")
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
 def test_timeout_strategy_fault(
-    w3, machine, clock, eip1559_transaction, account, interval, mock_wake_sleep, mocker
+    machine,
+    eip1559_transaction,
+    account,
+    mocker,
 ):
     atx, fault_hook = _broadcast_tx(machine, eip1559_transaction, account, mocker)
 

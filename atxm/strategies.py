@@ -1,3 +1,5 @@
+import time
+
 import math
 from abc import ABC
 from datetime import datetime, timedelta
@@ -134,6 +136,8 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
 
     _MAX_TIP_FACTOR = 3  # max 3x over suggested tip
 
+    _MIN_TIME_BETWEEN_SPEEDUPS = 90  # 90s minimum between speedups
+
     _NAME = "speedup"
 
     _GAS_PRICE_FIELD = "gasPrice"
@@ -145,6 +149,7 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
         w3: Web3,
         speedup_increase_percentage: float = _SPEEDUP_INCREASE_PERCENTAGE,
         max_tip_factor: int = _MAX_TIP_FACTOR,
+        min_time_between_speedups: int = _MIN_TIME_BETWEEN_SPEEDUPS,
     ):
         super().__init__(w3)
 
@@ -161,6 +166,7 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
 
         self.speedup_factor = 1 + speedup_increase_percentage
         self.max_tip_factor = max_tip_factor
+        self.min_time_between_speedups = min_time_between_speedups
 
     def _calculate_eip1559_speedup_fee(self, params: TxParams) -> Tuple[int, int, int]:
         current_base_fee = self.w3.eth.get_block("latest")["baseFeePerGas"]
@@ -211,6 +217,10 @@ class ExponentialSpeedupStrategy(AsyncTxStrategy):
         return math.ceil(base_price_to_increase * self.speedup_factor)
 
     def execute(self, pending: PendingTx) -> Optional[TxParams]:
+        if pending.last_updated + self.min_time_between_speedups > int(time.time()):
+            # too soon - don't update
+            return None
+
         params = pending.params
 
         if self._GAS_PRICE_FIELD in pending.params:

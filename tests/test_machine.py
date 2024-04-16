@@ -1,3 +1,6 @@
+import time
+from unittest.mock import ANY
+
 import math
 from typing import List
 
@@ -55,6 +58,7 @@ def test_queue_from_parameter_handling(
     account,
     eip1559_transaction,
     mock_wake_sleep,
+    mocker,
 ):
     # 1. "from" parameter does not match account
     with pytest.raises(ValueError):
@@ -70,6 +74,10 @@ def test_queue_from_parameter_handling(
         _ = machine.queue_transaction(
             params=tx_params,
             signer=account,
+            on_broadcast_failure=mocker.Mock(),
+            on_fault=mocker.Mock(),
+            on_finalized=mocker.Mock(),
+            on_insufficient_funds=mocker.Mock(),
         )
 
     # 2. no "from" parameter
@@ -80,6 +88,10 @@ def test_queue_from_parameter_handling(
     atx = machine.queue_transaction(
         params=tx_params,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
     assert atx.params["from"] == account.address, "same as signer account"
 
@@ -89,6 +101,10 @@ def test_queue_from_parameter_handling(
     atx = machine.queue_transaction(
         params=tx_params,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
     assert atx.params["from"] == account.address
 
@@ -100,6 +116,7 @@ def test_queue(
     account,
     eip1559_transaction,
     mock_wake_sleep,
+    mocker,
 ):
     wake, _ = mock_wake_sleep
 
@@ -112,6 +129,10 @@ def test_queue(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert isinstance(atx, FutureTx)
@@ -152,6 +173,10 @@ def test_wake_after_queuing_when_idle_and_not_already_running(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert stop_spy.call_count == 0, "no task to stop"
@@ -184,6 +209,10 @@ def test_wake_after_queuing_when_idle_and_already_running(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert stop_spy.call_count == 1, "task stopped"
@@ -200,6 +229,7 @@ def test_wake_no_call_after_queuing_when_already_busy(
     eip1559_transaction,
     account,
     mock_wake_sleep,
+    mocker,
 ):
     wake, _ = mock_wake_sleep
 
@@ -210,6 +240,10 @@ def test_wake_no_call_after_queuing_when_already_busy(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert wake.call_count == 1
@@ -222,6 +256,10 @@ def test_wake_no_call_after_queuing_when_already_busy(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert wake.call_count == 1  # remains unchanged
@@ -232,6 +270,7 @@ def test_wake_no_call_after_queuing_when_already_paused(
     eip1559_transaction,
     account,
     mock_wake_sleep,
+    mocker,
 ):
     wake, sleep = mock_wake_sleep
 
@@ -248,6 +287,10 @@ def test_wake_no_call_after_queuing_when_already_paused(
         params=eip1559_transaction,
         signer=account,
         info={"message": "something wonderful is happening..."},
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     assert wake.call_count == 0
@@ -270,11 +313,15 @@ def test_broadcast(
     assert not machine.busy
 
     # Queue a transaction
-    hook = mocker.Mock()
+    broadcast_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_broadcast=hook,
+        on_broadcast=broadcast_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -301,7 +348,7 @@ def test_broadcast(
 
     # wait for the hook to be called
     yield deferLater(reactor, 0.2, lambda: None)
-    assert hook.call_count == 1
+    assert broadcast_hook.call_count == 1
 
     assert atx.retries == 0
 
@@ -312,6 +359,131 @@ def test_broadcast(
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
 
     machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+def test_broadcast_insufficient_funds(
+    w3,
+    machine,
+    legacy_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    """
+    Insufficient funds when using eth-tester is different than for other chains. For chains, it
+    fails with:
+
+    ValueError: {'code': -32000, 'message': 'insufficient funds for gas * price + value: balance 0, tx cost 629999999979000, overshot 629999999979000'}
+    """
+    wake, _ = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    # Queue a transaction
+    broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=legacy_transaction,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_broadcast_failure=broadcast_failure_hook,
+        on_insufficient_funds=insufficient_funds_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1
+
+    # There is one queued transaction
+    assert len(machine.queued) == 1
+
+    value_error = ValueError(
+        {
+            "code": -32000,
+            "message": "insufficient funds for gas * price + value: balance 0, tx cost 629999999979000, overshot 629999999979000",
+        }
+    )
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=value_error)
+
+    machine.start(now=True)
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert insufficient_funds_hook.call_count == 1
+    insufficient_funds_hook.assert_called_with(atx, ANY)
+
+    assert broadcast_failure_hook.call_count == 0, "broadcast failure hook not called"
+    assert broadcast_hook.call_count == 0, "broadcast hook not called"
+    assert fault_hook.call_count == 0, "fault hook not called"
+
+    # check that tx still in queue
+    assert len(machine.queued) == 1
+
+
+@pytest_twisted.inlineCallbacks
+def test_broadcast_insufficient_funds_eth_tester(
+    w3,
+    machine,
+    eip1559_transaction,
+    account,
+    mocker,
+    mock_wake_sleep,
+):
+    """
+    Insufficient funds when using eth-tester is different than for other chains. Unsure if chains
+    will move this direction of not, so covering this case for now. It fails with:
+
+    eth_utils.exceptions.ValidationError: Sender does not have enough balance to
+    cover transaction value and gas  (has 1000000000000000000000000, needs 2000000000021000000000000)
+    """
+    wake, _ = mock_wake_sleep
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.busy
+
+    transaction_params = dict(eip1559_transaction)
+    account_balance = w3.eth.get_balance(account.address)
+    transaction_params["value"] = account_balance * 2  # not affordable
+
+    # Queue a transaction
+    broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=transaction_params,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_broadcast_failure=broadcast_failure_hook,
+        on_insufficient_funds=insufficient_funds_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        info={"message": "something wonderful is happening..."},
+    )
+
+    assert wake.call_count == 1
+
+    # There is one queued transaction
+    assert len(machine.queued) == 1
+
+    machine.start(now=True)
+
+    # wait for the hook to be called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert insufficient_funds_hook.call_count == 1
+    insufficient_funds_hook.assert_called_with(atx, ANY)
+
+    assert broadcast_failure_hook.call_count == 0, "broadcast failure hook not called"
+    assert broadcast_hook.call_count == 0, "broadcast hook not called"
+    assert fault_hook.call_count == 0, "fault hook not called"
+
+    # check that tx still in queue
+    assert len(machine.queued) == 1
 
 
 @pytest_twisted.inlineCallbacks
@@ -336,13 +508,17 @@ def test_broadcast_non_recoverable_error(
     assert not machine.busy
 
     # Queue a transaction
-    broadcast_failure_hook = mocker.Mock()
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
+        on_insufficient_funds=insufficient_funds_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -357,30 +533,29 @@ def test_broadcast_non_recoverable_error(
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
 
     machine.start(now=True)
-    yield clock.advance(1)
 
     # wait for the hook to be called
     yield deferLater(reactor, 0.2, lambda: None)
     assert broadcast_failure_hook.call_count == 1
     broadcast_failure_hook.assert_called_with(atx, error)
 
-    # The transaction failed and is not requeued
-    assert len(machine.queued) == 0
+    # tx remains in queue
+    assert len(machine.queued) == 1
 
     # run a few cycles
     for i in range(2):
         yield clock.advance(1)
 
     assert broadcast_hook.call_count == 0
+    assert insufficient_funds_hook.call_count == 0
 
-    assert atx.requeues == 0
+    assert atx.retries == 0
 
     # tx failed and not requeued
-    assert machine.current_state == machine._IDLE
+    assert machine.current_state == machine._BUSY
 
-    assert len(state_observer.transitions) == 2
+    assert len(state_observer.transitions) == 1
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
-    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
 
     machine.stop()
 
@@ -402,7 +577,7 @@ def test_broadcast_recoverable_error(
     mock_wake_sleep,
 ):
     # need more freedom with redo attempts for test
-    mocker.patch.object(machine, "_MAX_REDO_ATTEMPTS", 10)
+    mocker.patch.object(machine, "_MAX_RETRY_ATTEMPTS", 10)
 
     wake, _ = mock_wake_sleep
 
@@ -410,13 +585,17 @@ def test_broadcast_recoverable_error(
     assert not machine.busy
 
     # Queue a transaction
-    broadcast_failure_hook = mocker.Mock()
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=insufficient_funds_hook,
         info={"message": "something wonderful is happening..."},
     )
 
@@ -436,7 +615,7 @@ def test_broadcast_recoverable_error(
     for i in range(5):
         yield clock.advance(1)
         assert len(machine.queued) == 1  # remains in queue and not broadcasted
-        assert atx.requeues >= i
+        assert atx.retries >= i
 
     # call real method from now on
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=real_method)
@@ -459,6 +638,7 @@ def test_broadcast_recoverable_error(
     yield deferLater(reactor, 0.2, lambda: None)
     assert broadcast_hook.call_count == 1
     assert broadcast_failure_hook.call_count == 0
+    assert insufficient_funds_hook.call_count == 0
 
     # tx only broadcasted and not finalized, so we are still busy
     assert machine.current_state == machine._BUSY
@@ -474,7 +654,7 @@ def test_broadcast_recoverable_error(
 @pytest.mark.parametrize(
     "recoverable_error", [TooManyRequests, ProviderConnectionError, TimeExhausted]
 )
-def test_broadcast_recoverable_error_requeues_exceeded(
+def test_broadcast_recoverable_error_retries_exceeded(
     recoverable_error,
     clock,
     w3,
@@ -491,13 +671,16 @@ def test_broadcast_recoverable_error_requeues_exceeded(
     assert not machine.busy
 
     # Queue a transaction
-    broadcast_failure_hook = mocker.Mock()
     broadcast_hook = mocker.Mock()
+    broadcast_failure_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
         on_broadcast_failure=broadcast_failure_hook,
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
         info={"message": "something wonderful is happening..."},
     )
 
@@ -511,13 +694,13 @@ def test_broadcast_recoverable_error_requeues_exceeded(
     assert _is_recoverable_send_tx_error(error)
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
 
-    # repeat some cycles; tx fails then gets requeued since error is "recoverable"
+    # repeat some cycles; tx fails then gets retried since error is "recoverable"
     machine.start(now=True)
     # one less than max attempts
-    for i in range(machine._MAX_REDO_ATTEMPTS - 1):
+    for i in range(machine._MAX_RETRY_ATTEMPTS - 1):
         assert len(machine.queued) == 1  # remains in queue and not broadcasted
         yield clock.advance(1)
-        assert atx.requeues >= i
+        assert atx.retries >= i
 
     # push over the retry limit
     yield clock.advance(1)
@@ -527,23 +710,20 @@ def test_broadcast_recoverable_error_requeues_exceeded(
     assert broadcast_failure_hook.call_count == 1
     broadcast_failure_hook.assert_called_with(atx, error)
 
-    assert atx.requeues == machine._MAX_REDO_ATTEMPTS
+    # The transaction failed but remains in the queue, unless the user does something
+    assert len(machine.queued) == 1
 
-    # The transaction failed and is not requeued
-    assert len(machine.queued) == 0
+    # retries are reset
+    assert atx.retries == 0
 
     # run a few cycles
-    for i in range(2):
+    for i in range(machine._MAX_RETRY_ATTEMPTS - 1):
         yield clock.advance(1)
 
     assert broadcast_hook.call_count == 0
 
-    # tx failed and not requeued
-    assert machine.current_state == machine._IDLE
-
-    assert len(state_observer.transitions) == 2
+    assert len(state_observer.transitions) == 1
     assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
-    assert state_observer.transitions[1] == (machine._BUSY, machine._IDLE)
 
     machine.stop()
 
@@ -563,11 +743,14 @@ def test_finalize(
     assert machine.current_state == machine._IDLE
 
     # Queue a transaction
-    hook = mocker.Mock()
+    finalized_hook = mocker.Mock()
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
-        on_finalized=hook,
+        on_finalized=finalized_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # There is one queued transaction
@@ -599,10 +782,12 @@ def test_finalize(
     # async transaction reflects finalized state
     assert atx.final
     assert atx.receipt
+    assert atx.successful
 
     # wait for the hook to be called
     yield deferLater(reactor, 0.2, lambda: None)
-    assert hook.call_count == 1
+    assert finalized_hook.call_count == 1
+    finalized_hook.assert_called_with(atx)
 
     yield clock.advance(1)
 
@@ -625,6 +810,7 @@ def test_follow(
     eip1559_transaction,
     account,
     mock_wake_sleep,
+    mocker,
 ):
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -632,6 +818,10 @@ def test_follow(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -676,6 +866,7 @@ def test_use_strategies_speedup_used(
     account,
     mocker,
     mock_wake_sleep,
+    strategies,
 ):
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -688,9 +879,15 @@ def test_use_strategies_speedup_used(
         params=eip1559_transaction,
         signer=account,
         on_broadcast=broadcast_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     # advance to broadcast the transaction
     while machine.pending is None:
@@ -702,8 +899,8 @@ def test_use_strategies_speedup_used(
     broadcast_hook.assert_called_with(atx), "called with correct parameter"
 
     assert machine.current_state == machine._BUSY
-
     original_params = dict(atx.params)
+    atx.last_updated = int(time.time() - strategies[0].min_time_between_speedups - 1)
 
     # need some cycles while tx unmined for strategies to kick in
     for i in range(2):
@@ -767,7 +964,12 @@ def test_use_strategies_timeout_used(
     assert machine.current_state == machine._IDLE
 
     atx = machine.queue_transaction(
-        params=eip1559_transaction, signer=account, on_fault=fault_hook
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=fault_hook,
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -830,14 +1032,22 @@ def test_use_strategies_that_dont_make_updates(
 
     _configure_machine_strategies(machine, [strategy_1, strategy_2])
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     machine.start()
     assert machine.current_state == machine._IDLE
 
     broadcast_hook = mocker.Mock()
     atx = machine.queue_transaction(
-        params=eip1559_transaction, signer=account, on_broadcast=broadcast_hook
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -889,6 +1099,150 @@ def test_use_strategies_that_dont_make_updates(
 
 
 @pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
+def test_insufficient_funds_after_strategy_update_eth_tester(
+    w3,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mocker,
+):
+    strategy_updated_params = dict(eip1559_transaction)
+    account_balance = w3.eth.get_balance(account.address)
+    strategy_updated_params["value"] = account_balance * 2  # not affordable
+
+    strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
+    strategy_1.name = "make_unaffordable"
+    strategy_1.execute.return_value = strategy_updated_params
+
+    _configure_machine_strategies(machine, [strategy_1])
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    broadcast_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_fault=fault_hook,
+        on_insufficient_funds=insufficient_funds_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.pending == atx
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+    broadcast_hook.assert_called_with(atx), "called with correct parameter"
+
+    assert len(machine.queued) == 0
+    assert machine.current_state == machine._BUSY
+
+    assert insufficient_funds_hook.call_count == 0, "not yet called"
+
+    # get strategy to kick in
+    yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert insufficient_funds_hook.call_count == 1
+    insufficient_funds_hook.assert_called_with(ANY, ANY)
+    assert fault_hook.call_count == 0, "fault hook not called"
+
+    assert machine.pending == atx, "still pending"
+
+    assert len(state_observer.transitions) == 1
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
+@pytest.mark.usefixtures("disable_auto_mining", "mock_wake_sleep")
+def test_insufficient_funds_after_strategy_update(
+    w3,
+    machine,
+    state_observer,
+    clock,
+    eip1559_transaction,
+    account,
+    mocker,
+):
+    strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
+    strategy_1.name = "no_change_but_still_returns_non_none"
+    strategy_1.execute.return_value = eip1559_transaction
+
+    _configure_machine_strategies(machine, [strategy_1])
+
+    machine.start()
+    assert machine.current_state == machine._IDLE
+
+    broadcast_hook = mocker.Mock()
+    fault_hook = mocker.Mock()
+    insufficient_funds_hook = mocker.Mock()
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast=broadcast_hook,
+        on_fault=fault_hook,
+        on_insufficient_funds=insufficient_funds_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+    )
+
+    # advance to broadcast the transaction
+    while machine.pending is None:
+        yield clock.advance(1)
+
+    assert machine.pending == atx
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert broadcast_hook.call_count == 1
+    broadcast_hook.assert_called_with(atx), "called with correct parameter"
+
+    assert len(machine.queued) == 0
+    assert machine.current_state == machine._BUSY
+
+    assert insufficient_funds_hook.call_count == 0, "not yet called"
+
+    value_error = ValueError(
+        {
+            "code": -32000,
+            "message": "insufficient funds for gas * price + value: balance 0, tx cost 629999999979000, overshot 629999999979000",
+        }
+    )
+    mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=value_error)
+
+    # get strategy to kick in
+    yield clock.advance(1)
+
+    # ensure that hook is called
+    yield deferLater(reactor, 0.2, lambda: None)
+    assert insufficient_funds_hook.call_count == 1
+    insufficient_funds_hook.assert_called_with(ANY, ANY)
+    assert fault_hook.call_count == 0, "fault hook not called"
+
+    assert machine.pending == atx, "still pending"
+
+    assert len(state_observer.transitions) == 1
+    assert state_observer.transitions[0] == (machine._IDLE, machine._BUSY)
+
+    machine.stop()
+
+
+@pytest_twisted.inlineCallbacks
 @pytest.mark.usefixtures("disable_auto_mining")
 @pytest.mark.parametrize(
     "retry_error",
@@ -914,7 +1268,7 @@ def test_retry_with_errors_but_recovers(
     mock_wake_sleep,
 ):
     # need more freedom with redo attempts for test
-    mocker.patch.object(machine, "_MAX_REDO_ATTEMPTS", 10)
+    mocker.patch.object(machine, "_MAX_RETRY_ATTEMPTS", 10)
 
     # strategies that don't make updates
     strategy_1 = mocker.Mock(spec=AsyncTxStrategy)
@@ -924,7 +1278,9 @@ def test_retry_with_errors_but_recovers(
 
     _configure_machine_strategies(machine, [strategy_1])
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -936,6 +1292,9 @@ def test_retry_with_errors_but_recovers(
         signer=account,
         on_fault=fault_hook,
         on_broadcast=broadcast_hook,
+        on_broadcast_failure=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -1032,7 +1391,9 @@ def test_retry_with_errors_retries_exceeded(
 
     _configure_machine_strategies(machine, [strategy_1])
 
-    update_spy = mocker.spy(machine._tx_tracker, "update_after_retry")
+    update_spy = mocker.spy(
+        machine._tx_tracker, "update_active_after_successful_strategy_update"
+    )
 
     machine.start()
     assert machine.current_state == machine._IDLE
@@ -1042,8 +1403,11 @@ def test_retry_with_errors_retries_exceeded(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
         on_fault=fault_hook,
         on_broadcast=broadcast_hook,
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -1061,7 +1425,7 @@ def test_retry_with_errors_retries_exceeded(
     mocker.patch.object(w3.eth, "send_raw_transaction", side_effect=error)
 
     # retry max attempts
-    for i in range(machine._MAX_REDO_ATTEMPTS):
+    for i in range(machine._MAX_RETRY_ATTEMPTS):
         assert machine.pending is not None
         yield clock.advance(1)
         assert atx.retries >= i
@@ -1078,7 +1442,7 @@ def test_retry_with_errors_retries_exceeded(
     assert fault_hook.call_count == 1
     fault_hook.assert_called_with(atx)
 
-    assert atx.retries == machine._MAX_REDO_ATTEMPTS
+    assert atx.retries == machine._MAX_RETRY_ATTEMPTS
 
     assert len(machine.queued) == 0
     assert atx.final is False
@@ -1139,6 +1503,10 @@ def test_pause_when_busy(clock, machine, eip1559_transaction, account, mocker):
     _ = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # advance to broadcast the transaction
@@ -1172,7 +1540,12 @@ def test_pause_when_busy(clock, machine, eip1559_transaction, account, mocker):
 
 @pytest.mark.usefixtures("disable_auto_mining")
 def test_simple_state_transitions(
-    ethereum_tester, machine, eip1559_transaction, account, mock_wake_sleep
+    ethereum_tester,
+    machine,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
+    mocker,
 ):
     assert machine.current_state == machine._IDLE
 
@@ -1201,6 +1574,10 @@ def test_simple_state_transitions(
     atx = machine.queue_transaction(
         params=eip1559_transaction,
         signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
     )
 
     # broadcast tx

@@ -4,11 +4,11 @@ from collections import deque
 from copy import copy
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Callable, Deque, Dict, Optional, Set, Tuple
+from typing import Callable, Deque, Dict, Optional, Set, Tuple, Union
 
 from web3.types import TxParams, TxReceipt
 
-from atxm.exceptions import TransactionFaulted
+from atxm.exceptions import InsufficientFunds, TransactionFaulted
 from atxm.logging import log
 from atxm.tx import (
     FinalizedTx,
@@ -100,7 +100,13 @@ class _TxTracker:
             return
         log.debug(f"[tracker] tracked active transaction {tx.txhash.hex()}")
 
-    def update_after_retry(self, tx: PendingTx) -> PendingTx:
+    def __pop(self) -> FutureTx:
+        """Pop the next transaction from the queue."""
+        return self.__queue.popleft()
+
+    def update_active_after_successful_strategy_update(
+        self, tx: PendingTx
+    ) -> PendingTx:
         if not self.__active:
             raise RuntimeError("No active transaction to update")
         if tx.id != self.__active.id:
@@ -110,10 +116,12 @@ class _TxTracker:
 
         self.__active.txhash = tx.txhash
         self.__active.params = tx.params
+        self.__active.last_updated = int(time.time())
+        self.__active.retries = 0  # reset retries to 0
 
         return self.pending
 
-    def update_failed_retry_attempt(self, tx: PendingTx):
+    def update_active_after_failed_strategy_update(self, tx: PendingTx):
         if not self.__active:
             raise RuntimeError("No active transaction to update")
         if tx.id != self.__active.id:
@@ -130,12 +138,22 @@ class _TxTracker:
         Morphs a future transaction into a pending transaction.
         Uses polymorphism to transform the future transaction into a pending transaction.
         """
+        head_tx = self.head()
+        if tx.id != head_tx.id:
+            raise RuntimeError(
+                f"Mismatch between tx at the front of the queue ({head_tx.id}) and provided tx ({tx.id})"
+            )
         tx.txhash = txhash
-        tx.created = int(time.time())
+        now = int(time.time())
+        tx.created = now
+        tx.last_updated = now
+        tx.retries = 0  # reset retries
         tx.capped = False
         tx.__class__ = PendingTx
         tx: PendingTx
-        self.__set_active(tx=tx)
+
+        self.__pop()  # remove from queue
+        self.__set_active(tx=tx)  # set as active
         return tx
 
     def fault(
@@ -151,6 +169,7 @@ class _TxTracker:
             )
 
         hook = self.__active.on_fault
+
         tx = self.__active
         txhash = tx.txhash.hex()
 
@@ -164,8 +183,7 @@ class _TxTracker:
             f"{txhash}{f' ({fault_error.message})' if fault_error.message else ''}"
         )
         self.clear_active()
-        if hook:
-            fire_hook(hook=hook, tx=tx)
+        fire_hook(hook=hook, tx=tx)
 
     def finalize_active_tx(self, receipt: TxReceipt) -> None:
         """
@@ -175,15 +193,14 @@ class _TxTracker:
         if not self.__active:
             raise RuntimeError("No pending transaction to finalize")
 
-        hook = self.__active.on_finalized
         self.__active.receipt = receipt
         self.__active.__class__ = FinalizedTx
         tx = self.__active
+        hook = self.__active.on_finalized
         self.finalized.add(tx)  # noqa
         log.info(f"[tracker] #atx-{tx.id} pending -> finalized")
         self.clear_active()
-        if hook:
-            fire_hook(hook=hook, tx=tx)
+        fire_hook(hook=hook, tx=tx)
 
     def clear_active(self) -> None:
         """Clear the active transaction (destructive operation)."""
@@ -205,28 +222,28 @@ class _TxTracker:
         """Return the queue of transactions."""
         return tuple(self.__queue)
 
-    def pop(self) -> FutureTx:
-        """Pop the next transaction from the queue."""
-        return self.__queue.popleft()
+    def head(self) -> FutureTx:
+        return self.__queue[0]
 
-    def requeue(self, tx: FutureTx) -> None:
-        """Re-queue a transaction for broadcast and subsequent tracking."""
-        tx.requeues += 1
-        self.__queue.append(tx)
+    def increment_broadcast_retries(self, tx: FutureTx) -> None:
+        tx.retries += 1
         self.commit()
-        log.info(
-            f"[tracker] re-queued transaction #atx-{tx.id} "
-            f"priority {len(self.__queue)}"
-        )
+
+    def reset_broadcast_retries(self, tx: FutureTx) -> None:
+        tx.retries = 0
+        self.commit()
 
     def queue_tx(
         self,
         params: TxParams,
+        on_broadcast_failure: Callable[[FutureTx, Exception], None],
+        on_fault: Callable[[FaultedTx], None],
+        on_finalized: Callable[[FinalizedTx], None],
+        on_insufficient_funds: Callable[
+            [Union[FutureTx, PendingTx], InsufficientFunds], None
+        ],
         info: Dict[str, str] = None,
         on_broadcast: Optional[Callable[[PendingTx], None]] = None,
-        on_broadcast_failure: Optional[Callable[[FutureTx, Exception], None]] = None,
-        on_finalized: Optional[Callable[[FinalizedTx], None]] = None,
-        on_fault: Optional[Callable[[FaultedTx], None]] = None,
     ) -> FutureTx:
         """Queue a new transaction for broadcast and subsequent tracking."""
         tx = FutureTx(
@@ -236,10 +253,11 @@ class _TxTracker:
         )
 
         # configure hooks
-        tx.on_broadcast = on_broadcast
         tx.on_broadcast_failure = on_broadcast_failure
-        tx.on_finalized = on_finalized
         tx.on_fault = on_fault
+        tx.on_finalized = on_finalized
+        tx.on_broadcast = on_broadcast
+        tx.on_insufficient_funds = on_insufficient_funds
 
         self.__queue.append(tx)
         self.commit()
@@ -248,3 +266,10 @@ class _TxTracker:
             f"[tracker] queued transaction #atx-{tx.id} priority {len(self.__queue)}"
         )
         return tx
+
+    def remove_queued_tx(self, tx: FutureTx) -> bool:
+        try:
+            self.__queue.remove(tx)
+            return True
+        except ValueError:
+            return False

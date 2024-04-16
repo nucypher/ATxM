@@ -1,14 +1,14 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Union
 
 from eth_typing import ChecksumAddress
 from eth_utils import encode_hex
 from hexbytes import HexBytes
 from web3.types import TxParams, TxReceipt
 
-from atxm.exceptions import Fault
+from atxm.exceptions import Fault, InsufficientFunds
 
 TxHash = HexBytes
 
@@ -18,16 +18,19 @@ class AsyncTx(ABC):
     id: int
     final: bool = field(default=None, init=False)
     fault: Optional[Fault] = field(default=None, init=False)
-    on_broadcast: Optional[Callable[["PendingTx"], None]] = field(
-        default=None, init=False
-    )
     on_broadcast_failure: Optional[Callable[["FutureTx", Exception], None]] = field(
         default=None, init=False
     )
-    on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
+    on_broadcast: Optional[Callable[["PendingTx"], None]] = field(
         default=None, init=False
     )
     on_fault: Optional[Callable[["FaultedTx"], None]] = field(default=None, init=False)
+    on_finalized: Optional[Callable[["FinalizedTx"], None]] = field(
+        default=None, init=False
+    )
+    on_insufficient_funds: Optional[
+        Callable[[Union["FutureTx", "PendingTx"], InsufficientFunds], None]
+    ] = field(default=None, init=False)
 
     def __repr__(self):
         return f"<{self.__class__.__name__} id={self.id} final={self.final}>"
@@ -56,7 +59,7 @@ class AsyncTx(ABC):
 class FutureTx(AsyncTx):
     params: TxParams
     info: Optional[Dict] = None
-    requeues: int = field(default=0, init=False)
+    retries: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
 
     def __hash__(self):
@@ -93,6 +96,7 @@ class FutureTx(AsyncTx):
 class PendingTx(AsyncTx):
     retries: int = field(default=0, init=False)
     final: bool = field(default=False, init=False)
+    last_updated: int = field(default=0, init=False)
     params: TxParams
     txhash: TxHash
     created: int
@@ -152,6 +156,14 @@ class FinalizedTx(AsyncTx):
     @property
     def txhash(self) -> TxHash:
         return self.receipt["transactionHash"]
+
+    @property
+    def block_number(self):
+        return self.receipt["blockNumber"]
+
+    @property
+    def successful(self):
+        return self.receipt["status"] == 1
 
 
 @dataclass
