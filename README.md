@@ -43,9 +43,13 @@ machine = AutomaticTxMachine(w3=w3)
 future_tx = machine.queue_transaction(
     signer=account,
     params=transaction,
+    on_broadcast_failure=...,
+    on_fault=...,
+    on_finalized=...,
+    on_insufficient_funds=...,
 )
 
-reactor.start()
+reactor.run()
 ```
 
 ### Features
@@ -67,9 +71,11 @@ They can be configured to use any kind of custom context, like gas oracles.
 
 Hooks are fired in a dedicated thread for lifecycle events.
 
-- `on_broadcast`: When a transaction is broadcasted.
-- `on_finalized`: When a transaction is finalized.
-- `on_fault`: When a transaction reverted or another error occurred.
+- `on_broadcast` _(Optional)_: When a transaction is broadcasted.
+- `on_broadcast_failure`: When a transaction fails to broadcast.
+- `on_finalized`: When a transaction is finalized (successful or reverted).
+- `on_fault`: When a transaction error occurred.
+- `on_insufficient_funds`: When the account associated with the transaction does not have enough funds for the transaction.
 
 
 ##### Crash-Tolerance
