@@ -1,16 +1,14 @@
-[project]
+[tool.poetry]
 name = "atxm"
 version = "0.3.0"
 authors = [
-  { name="NuCypher", email="devs@nucypher.com" },
+    "NuCypher <devs@nucypher.com>",
 ]
 description = "Automatic Transaction Machine (ATxM) for Ethereum"
-license = {file = "LICENSE"}
 readme = "README.md"
-requires-python = ">=3.8"
+repository = "https://github.com/nucypher/atxm"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -24,18 +22,39 @@ classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
 ]
 
-dynamic = ["dependencies", "optional-dependencies"]
-
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
-optional-dependencies = {test = { file = ["dev-requirements.txt"] }}
-
-[project.urls]
+[tool.poetry.urls]
 Homepage = "https://github.com/nucypher/atxm"
 Issues = "https://github.com/nucypher/atxm/issues"
 
-[build-system]
-# These are the assumed default build requirements from pip:
-# https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
-requires = ["setuptools>=43.0.0", "wheel"]
-build-backend = "setuptools.build_meta"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4"
+web3 = "^6.15.1"
+twisted = "*"
+eth-account = ">=0.10.0"
+eth-typing = "*"
+eth-utils = "*"
+eth-abi = "*"
+eth-keys = "*"
+python-statemachine = "*"
+rlp = "*"
+urllib3 = "*"
+
+[tool.poetry.dev-dependencies]
+# testing
+eth-ape = "*"
+pytest = "*"
+pytest-mock = "*"
+pytest-twisted = "*"
+# quality control
+pre-commit = "*"
+black = "*"
+ruff = "*"
+
+
+[tool.ruff]
+lint.select = ["E", "F", "I"]
+lint.ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nucypher"]
