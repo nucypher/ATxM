@@ -25,11 +25,12 @@ from atxm.utils import (
     _get_average_blocktime,
     _get_confirmations,
     _get_receipt,
-    _process_send_raw_transaction_exception,
     _is_recoverable_send_tx_error,
     _make_tx_params,
+    _process_send_raw_transaction_exception,
     fire_hook,
 )
+
 from .logging import log
 
 

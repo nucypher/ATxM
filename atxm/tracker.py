@@ -11,11 +11,11 @@ from web3.types import TxParams, TxReceipt
 from atxm.exceptions import InsufficientFunds, TransactionFaulted
 from atxm.logging import log
 from atxm.tx import (
+    FaultedTx,
     FinalizedTx,
     FutureTx,
     PendingTx,
     TxHash,
-    FaultedTx,
 )
 from atxm.utils import fire_hook
 
