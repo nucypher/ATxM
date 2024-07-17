@@ -1,12 +1,13 @@
-[tool.poetry]
+[project]
 name = "atxm"
 version = "0.3.0"
 authors = [
-    "NuCypher <devs@nucypher.com>",
+  { name="NuCypher", email="devs@nucypher.com" },
 ]
 description = "Automatic Transaction Machine (ATxM) for Ethereum"
+license = {file = "LICENSE"}
 readme = "README.md"
-repository = "https://github.com/nucypher/atxm"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.9",
@@ -22,9 +23,25 @@ classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
 ]
 
-[tool.poetry.urls]
+[tool.poetry]
+name = "atxm"
+version = "0.3.0"
+authors = ["NuCypher"]
+description = "Automatic Transaction Machine (ATxM) for Ethereum."
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+optional-dependencies = {test = { file = ["dev-requirements.txt"] }}
+
+[project.urls]
 Homepage = "https://github.com/nucypher/atxm"
 Issues = "https://github.com/nucypher/atxm/issues"
+
+[build-system]
+# These are the assumed default build requirements from pip:
+# https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 
 [tool.poetry.dependencies]
