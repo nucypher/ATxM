@@ -25,4 +25,4 @@ jobs:
           pip install .
 
       - name: Lint with Ruff
-        run: ruff --output-format=github atxm
+        run: ruff check --output-format=github atxm
