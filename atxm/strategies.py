@@ -1,6 +1,5 @@
-import time
-
 import math
+import time
 from abc import ABC
 from datetime import datetime, timedelta
 from typing import Optional, Tuple

@@ -11,8 +11,7 @@ from web3.exceptions import (
     TooManyRequests,
     TransactionNotFound,
 )
-from web3.types import RPCError, TxData, TxParams
-from web3.types import TxReceipt, Wei
+from web3.types import RPCError, TxData, TxParams, TxReceipt, Wei
 
 from atxm.exceptions import InsufficientFunds, RPCException
 from atxm.logging import log
