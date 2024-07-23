@@ -1,6 +1,6 @@
 [project]
 name = "atxm"
-version = "0.3.0"
+version = "0.4.0"
 authors = [
   { name="NuCypher", email="devs@nucypher.com" },
 ]
@@ -25,7 +25,7 @@ classifiers = [
 
 [tool.poetry]
 name = "atxm"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["NuCypher <devs@nucypher.com>"]
 description = "Automatic Transaction Machine (ATxM) for Ethereum."
 
