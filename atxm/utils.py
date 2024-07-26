@@ -1,7 +1,6 @@
 import contextlib
 from typing import Callable, Optional
 
-from cytoolz import memoize
 from eth_utils import ValidationError
 from twisted.internet import reactor
 from web3 import Web3
@@ -18,7 +17,6 @@ from atxm.logging import log
 from atxm.tx import AsyncTx, PendingTx, TxHash
 
 
-@memoize
 def _get_average_blocktime(w3: Web3, sample_size: int) -> float:
     """Returns the average block time in seconds."""
     latest_block = w3.eth.get_block("latest")
