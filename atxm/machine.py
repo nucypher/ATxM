@@ -132,7 +132,7 @@ class _Machine(StateMachine):
 
         super().__init__()
 
-        self.add_observer(_Machine.LogObserver())
+        self.add_listener(_Machine.LogObserver())
 
     @property
     def _busy(self) -> bool:
