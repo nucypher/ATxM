@@ -130,9 +130,12 @@ class _Machine(StateMachine):
         self._task.clock = self.__CLOCK
         self._task.interval = self._IDLE_INTERVAL
 
+        # busy interval
+        self._busy_interval = None
+
         super().__init__()
 
-        self.add_observer(_Machine.LogObserver())
+        self.add_listener(_Machine.LogObserver())
 
     @property
     def _busy(self) -> bool:
@@ -173,12 +176,15 @@ class _Machine(StateMachine):
     @_transition_to_busy.before
     def _enter_busy_mode(self):
         """About to enter busy work mode (speed up interval)"""
-        average_block_time = _get_average_blocktime(
-            w3=self.w3, sample_size=self._BLOCK_SAMPLE_SIZE
-        )
-        self._task.interval = max(
-            round(average_block_time * self._BLOCK_INTERVAL), self._MIN_INTERVAL
-        )
+        if self._busy_interval is None:
+            average_block_time = _get_average_blocktime(
+                w3=self.w3, sample_size=self._BLOCK_SAMPLE_SIZE
+            )
+            self._busy_interval = max(
+                round(average_block_time * self._BLOCK_INTERVAL), self._MIN_INTERVAL
+            )
+
+        self._task.interval = self._busy_interval
         self.log.info(f"[working] cycle interval is now {self._task.interval} seconds")
 
     @_BUSY.enter

@@ -1,11 +1,9 @@
+import math
 import time
+from typing import List
 from unittest.mock import ANY
 
-import math
-from typing import List
-
 import pytest
-
 import pytest_twisted
 from eth_account import Account
 from eth_utils import ValidationError
@@ -18,6 +16,7 @@ from web3.exceptions import (
     Web3Exception,
 )
 
+import atxm
 from atxm import AutomaticTxMachine
 from atxm.strategies import AsyncTxStrategy, TimeoutStrategy
 from atxm.tx import FaultedTx, FinalizedTx, FutureTx, PendingTx
@@ -1536,6 +1535,72 @@ def test_pause_when_busy(clock, machine, eip1559_transaction, account, mocker):
     assert machine.current_state == machine._BUSY
     assert machine.running
     machine.stop()
+
+
+@pytest.mark.usefixtures("disable_auto_mining")
+def test_busy_interval_caching(
+    ethereum_tester,
+    machine,
+    eip1559_transaction,
+    account,
+    mock_wake_sleep,
+    mocker,
+):
+    average_blocktime_spy = mocker.spy(atxm.machine, "_get_average_blocktime")
+
+    assert machine.current_state == machine._IDLE
+    assert not machine.paused
+    assert not machine.busy
+    assert machine._busy_interval is None
+    assert average_blocktime_spy.call_count == 0
+
+    atx = machine.queue_transaction(
+        params=eip1559_transaction,
+        signer=account,
+        on_broadcast_failure=mocker.Mock(),
+        on_fault=mocker.Mock(),
+        on_finalized=mocker.Mock(),
+        on_insufficient_funds=mocker.Mock(),
+    )
+
+    # broadcast tx
+    machine._cycle()
+    assert machine.current_state == machine._BUSY
+    assert machine.busy
+    assert machine._busy_interval is not None
+    busy_interval_value = machine._busy_interval
+    assert machine._task.interval == busy_interval_value
+    assert average_blocktime_spy.call_count == 1
+
+    ethereum_tester.mine_block()
+
+    # busy -> pause
+    machine.pause()
+    assert machine.current_state == machine._PAUSED
+    assert machine.paused
+
+    # resume after pausing
+    machine.resume()
+    machine._cycle()  # wake doesn't do anything because mocked
+    assert machine.current_state == machine._BUSY
+    assert machine._busy_interval is not None
+    assert machine._busy_interval == busy_interval_value
+    assert machine._task.interval == busy_interval_value
+    assert average_blocktime_spy.call_count == 1
+    assert not machine.paused
+
+    # finalize tx
+    while machine.busy:
+        ethereum_tester.mine_block()
+        machine._cycle()
+
+    ethereum_tester.mine_block()
+    assert atx.final is True
+
+    # transition to idle
+    machine._cycle()
+    assert machine.current_state == machine._IDLE
+    assert machine._task.interval != busy_interval_value
 
 
 @pytest.mark.usefixtures("disable_auto_mining")

@@ -126,7 +126,7 @@ class StateObserver:
 @pytest.fixture
 def state_observer(machine):
     _observer = StateObserver()
-    machine.add_observer(_observer)
+    machine.add_listener(_observer)
 
     return _observer
 
